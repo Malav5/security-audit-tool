@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 from fpdf import FPDF
 import google.generativeai as genai
 import os
+import dns.resolver
 
 # --- BRANDING ---
 AGENCY_NAME = "CyberSecure India"
@@ -276,12 +277,94 @@ class SecurityScanner:
         print(f"\n✅ Report Generated: {filename}")
         return filename
 
+    def check_critical_exposures(self):
+        print("[*] Hunting for Critical Config Leaks (.env, .git)...")
+        # These are the "Holy Grail" for hackers
+        dangerous_files = {
+            "/.env": "Environment File (Contains DB passwords & API Keys)",
+            "/.git/HEAD": "Git Repository (Contains entire source code history)",
+            "/.ds_store": "Mac System File (Reveals directory structure)",
+            "/wp-config.php.bak": "WordPress Config Backup",
+            "/sitemap.xml": "Sitemap (Not a bug, but reveals site structure)"
+        }
+        
+        for path, name in dangerous_files.items():
+            try:
+                url = self.target_url.rstrip('/') + path
+                resp = requests.get(url, timeout=3, verify=False) # verify=False to catch even if SSL is broken
+                
+                # If we get a 200 OK and the content looks real
+                if resp.status_code == 200:
+                    # Validate it's not a custom 404 page by checking content length or keywords
+                    if "html" not in resp.headers.get("Content-Type", ""): 
+                        self.issues.append({
+                            "title": f"CRITICAL EXPOSURE: {name} Found",
+                            "severity": "HIGH",
+                            "impact": f"This file ({path}) is publicly accessible. Attackers can download it to steal passwords, API keys, or your entire codebase.",
+                            "fix": f"Immediately configure your web server (Nginx/Apache) to deny access to {path}."
+                        })
+            except:
+                pass
+
+    def check_email_security(self):
+        print("[*] Checking Email Security Records (SPF/DMARC)...")
+        try:
+            import dns.resolver
+            domain = self.hostname
+            
+            # 1. Check SPF (Sender Policy Framework)
+            try:
+                answers = dns.resolver.resolve(domain, 'TXT')
+                spf_found = False
+                for rdata in answers:
+                    if "v=spf1" in rdata.to_text():
+                        spf_found = True
+                        break
+                if not spf_found:
+                    self.issues.append({
+                        "title": "Missing SPF Record (Email Security)",
+                        "severity": "MEDIUM",
+                        "impact": "You have not authorized any servers to send email for you. Hackers can easily spoof your domain to send phishing emails.",
+                        "fix": "Add a TXT record for 'v=spf1' listing your authorized email servers."
+                    })
+            except:
+                # If no TXT records at all
+                self.issues.append({
+                    "title": "Missing SPF Record (Email Security)",
+                    "severity": "MEDIUM",
+                    "impact": "No SPF record found. Email spoofing is possible.",
+                    "fix": "Create an SPF TXT record."
+                })
+
+            # 2. Check DMARC (Domain-based Message Authentication)
+            try:
+                dmarc_domain = f"_dmarc.{domain}"
+                dns.resolver.resolve(dmarc_domain, 'TXT')
+                # If this passes, DMARC exists. Good.
+            except:
+                self.issues.append({
+                    "title": "Missing DMARC Record",
+                    "severity": "LOW",
+                    "impact": "DMARC tells email providers (Gmail/Outlook) what to do if an email fails the SPF check. Without it, spoofed emails might still land in inboxes.",
+                    "fix": "Add a TXT record for '_dmarc' to enforce a policy (e.g., 'v=DMARC1; p=none')."
+                })
+
+        except ImportError:
+            print("Error: dnspython library not installed. Skipping email check.")
+        except Exception as e:
+            print(f"DNS Check failed: {e}")
+
     def run(self):
-        self.check_ports()
-        self.check_ssl()
-        self.check_security_headers()
-        self.check_sensitive_files()
-        self.generate_report()
+    self.check_ports()
+    self.check_ssl()
+    self.check_security_headers()
+    self.check_sensitive_files()
+
+    # --- THE NEW REAL STUFF ---
+    self.check_critical_exposures() # <--- The Source Code Heist
+    self.check_email_security()     # <--- The Email Imposter
+
+    self.generate_report()
 
 if __name__ == "__main__":
     target = input("Enter website URL: ")
