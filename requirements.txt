@@ -5,3 +5,4 @@ certifi>=2024.2.2
 fpdf>=1.7.2
 pydantic>=2.9.0
 python-multipart>=0.0.9
+google-generativeai>=0.3.2

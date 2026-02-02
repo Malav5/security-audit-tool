@@ -5,6 +5,8 @@ import datetime
 import certifi
 from urllib.parse import urlparse
 from fpdf import FPDF
+import google.generativeai as genai
+import os
 
 # --- BRANDING ---
 AGENCY_NAME = "CyberSecure India"
@@ -224,54 +226,37 @@ class SecurityScanner:
             })
 
     def generate_report(self):
+        # 1. Generate the AI Summary BEFORE creating the PDF
+        print("[*] Consulting AI for Executive Summary...")
+        
+        # Prepare a simple list of titles for the AI
+        issue_titles = [i['title'] for i in self.issues]
+        ai_summary_text = self.get_ai_summary(issue_titles)
+        
         pdf = AdvancedPDF()
         pdf.add_page()
         
-        # --- Executive Summary Box ---
-        pdf.set_fill_color(240, 240, 240)
-        pdf.rect(10, pdf.get_y(), 190, 30, 'F')
-        
-        pdf.set_xy(15, pdf.get_y() + 5)
-        pdf.set_font('Arial', 'B', 12)
-        pdf.cell(0, 6, f"Target Host: {self.hostname}", 0, 1)
-        
-        pdf.set_x(15)
-        pdf.set_font('Arial', '', 10)
-        pdf.cell(0, 6, f"Scan Date: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}", 0, 1)
-        
-        # Score Logic
-        risk_count = len(self.issues)
-        pdf.set_xy(150, pdf.get_y() - 12)
-        pdf.set_font('Arial', 'B', 24)
-        if risk_count == 0:
-            pdf.set_text_color(*COLOR_SAFE)
-            pdf.cell(40, 10, "A+", 0, 1, 'C')
-        elif risk_count < 3:
-            pdf.set_text_color(*COLOR_MEDIUM_RISK)
-            pdf.cell(40, 10, "B", 0, 1, 'C')
-        else:
-            pdf.set_text_color(*COLOR_HIGH_RISK)
-            pdf.cell(40, 10, "F", 0, 1, 'C')
-            
-        pdf.ln(20)
+        # ... (Your existing Header Code) ...
 
-        # --- Findings Section ---
-        pdf.draw_section_header("Detailed Security Findings")
+        # --- NEW: AI Executive Summary Section ---
+        pdf.set_font('Arial', 'B', 14)
+        pdf.set_text_color(41, 128, 185) # Blue
+        pdf.cell(0, 10, "AI-POWERED EXECUTIVE SUMMARY", 0, 1, 'L')
         
-        if not self.issues:
-            pdf.set_font('Arial', 'I', 11)
-            pdf.cell(0, 10, "Great job! No common vulnerabilities were detected.", 0, 1)
-        else:
-            # Sort by severity (HIGH first)
-            priority = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
-            self.issues.sort(key=lambda x: priority.get(x["severity"], 3))
-            
-            for issue in self.issues:
-                pdf.add_issue_block(issue['title'], issue['impact'], issue['fix'], issue['severity'])
+        # Draw a box for the AI text
+        pdf.set_fill_color(245, 245, 245) # Very light gray
+        pdf.rect(10, pdf.get_y(), 190, 25, 'F')
+        
+        pdf.set_xy(12, pdf.get_y() + 2)
+        pdf.set_font('Arial', 'I', 10)
+        pdf.set_text_color(50, 50, 50)
+        pdf.multi_cell(186, 6, ai_summary_text)
+        pdf.ln(10) # Add space after the box
 
+        # ... (Rest of your existing PDF code: Findings, Grades, etc.) ...
+        
         filename = f"Audit_Report_{self.hostname}.pdf"
         pdf.output(filename)
-        print(f"\n✅ Report Generated: {filename}")
         return filename
 
     def run(self):
@@ -280,6 +265,36 @@ class SecurityScanner:
         self.check_security_headers()
         self.check_sensitive_files()
         self.generate_report()
+
+    def get_ai_summary(self, issues_list):
+        # Configure with your key (Best practice: Use environment variables in production)
+        # For now, you can paste it here, but don't commit it to Public GitHub!
+        GENAI_KEY = genai.configure(api_key=os.getenv("GEMINI_API_KEY")) 
+        
+        if not issues_list:
+            return "The security scan detected no major vulnerabilities. The system appears to follow standard security best practices."
+
+        try:
+            genai.configure(api_key=GENAI_KEY)
+            model = genai.GenerativeModel('gemini-pro')
+            
+            # The Prompt
+            prompt = f"""
+            Act as a Senior Cyber Security Consultant.
+            I have run an automated scan on a website and found the following issues:
+            {issues_list}
+            
+            Write a concise, 3-sentence Executive Summary for the client.
+            Focus on the business risk (e.g., "Data theft," "Reputation damage").
+            Do not list the technical fixes yet, just summarize the risk level.
+            Keep the tone professional and urgent if there are High risks.
+            """
+            
+            response = model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            print(f"AI Error: {e}")
+            return "Automated analysis unavailable. Please review specific findings below."
 
 if __name__ == "__main__":
     target = input("Enter website URL: ")
