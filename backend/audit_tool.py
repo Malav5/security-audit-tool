@@ -1,235 +1,138 @@
-import requests
 import socket
+import requests
 import ssl
-import datetime
-import certifi
-from urllib.parse import urlparse
+import sys  # Added for immediate logging
+import os
+from datetime import datetime
 from fpdf import FPDF
 import google.generativeai as genai
-import os
-
-# --- BRANDING ---
-AGENCY_NAME = "CyberSecure India"
-AGENCY_SITE = "www.cybersecure-india.com"
-REPORT_TITLE = "Comprehensive Security Audit"
-
-# --- COLORS ---
-COLOR_HEADER_BG = (41, 128, 185)   # Corporate Blue
-COLOR_HEADER_TXT = (255, 255, 255) # White
-COLOR_HIGH_RISK = (231, 76, 60)    # Red
-COLOR_MEDIUM_RISK = (243, 156, 18) # Orange
-COLOR_SAFE = (39, 174, 96)         # Green
-COLOR_TEXT_MAIN = (50, 50, 50)     # Dark Gray
-COLOR_TEXT_LIGHT = (100, 100, 100) # Light Gray
 
 class AdvancedPDF(FPDF):
     def header(self):
-        # Header Background
-        self.set_fill_color(*COLOR_HEADER_BG)
-        self.rect(0, 0, 210, 45, 'F')
-        
-        # Agency Name
-        self.set_text_color(*COLOR_HEADER_TXT)
-        self.set_font('Arial', 'B', 22)
-        self.set_xy(10, 12)
-        self.cell(0, 10, AGENCY_NAME, 0, 1, 'L')
-        
-        # Report Title
-        self.set_font('Arial', '', 12)
-        self.set_xy(10, 22)
-        self.cell(0, 10, REPORT_TITLE, 0, 1, 'L')
-
-        # Link to Agency
-        self.set_font('Arial', 'U', 10)
-        self.set_xy(10, 32)
-        self.cell(0, 10, AGENCY_SITE, link=f"https://{AGENCY_SITE}")
-        
-        # Confidential Stamp
         self.set_font('Arial', 'B', 12)
-        self.set_text_color(255, 200, 200)
-        self.set_xy(150, 18)
-        self.cell(50, 10, "[ CONFIDENTIAL ]", 0, 0, 'C')
-        
-        self.ln(30)
+        self.cell(0, 10, 'CyberSecure India - Security Audit Report', 0, 1, 'C')
+        self.ln(5)
 
     def footer(self):
         self.set_y(-15)
         self.set_font('Arial', 'I', 8)
-        self.set_text_color(128, 128, 128)
-        self.cell(0, 10, f'Page {self.page_no()} | Automated Assessment by {AGENCY_NAME}', 0, 0, 'C')
-
-    def draw_section_header(self, title):
-        self.ln(10)
-        self.set_font('Arial', 'B', 14)
-        self.set_text_color(44, 62, 80)
-        self.cell(0, 10, title.upper(), 0, 1, 'L')
-        self.set_fill_color(44, 62, 80)
-        self.rect(10, self.get_y(), 190, 1, 'F')
-        self.ln(5)
-
-    def add_issue_block(self, title, impact, fix, severity="HIGH"):
-        # Select Color based on severity
-        if severity == "HIGH":
-            self.set_fill_color(*COLOR_HIGH_RISK)
-            bg_badge = "CRITICAL"
-        elif severity == "MEDIUM":
-            self.set_fill_color(*COLOR_MEDIUM_RISK)
-            bg_badge = "WARNING"
-        else:
-            self.set_fill_color(*COLOR_SAFE)
-            bg_badge = "INFO"
-
-        # Badge
-        current_y = self.get_y()
-        self.rect(10, current_y + 2, 22, 6, 'F')
-        self.set_text_color(255, 255, 255)
-        self.set_font('Arial', 'B', 8)
-        self.set_xy(10, current_y + 2)
-        self.cell(22, 6, bg_badge, 0, 0, 'C')
-
-        # Issue Title
-        self.set_xy(35, current_y)
-        self.set_text_color(*COLOR_TEXT_MAIN)
-        self.set_font('Arial', 'B', 11)
-        self.cell(0, 10, title, 0, 1)
-
-        # Impact Section
-        self.set_x(10)
-        self.set_text_color(*COLOR_TEXT_MAIN)
-        self.set_font('Arial', 'B', 9)
-        self.cell(15, 6, "Impact:", 0, 0)
-        self.set_font('Arial', '', 9)
-        self.multi_cell(0, 6, impact)
-
-        # Fix Section
-        self.set_x(10)
-        self.set_font('Arial', 'B', 9)
-        self.set_text_color(41, 128, 185) # Blue for fix
-        self.cell(22, 6, "Remediation:", 0, 0)
-        self.set_font('Arial', '', 9)
-        self.set_text_color(50, 50, 50)
-        self.multi_cell(0, 6, fix)
-        
-        self.ln(3) # Spacer
+        self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
 
 class SecurityScanner:
     def __init__(self, target_url):
-        if not target_url.startswith(("http://", "https://")):
-            self.target_url = "https://" + target_url
-        else:
-            self.target_url = target_url
-        self.parsed_url = urlparse(self.target_url)
-        self.hostname = self.parsed_url.netloc
+        self.target_url = target_url
+        self.hostname = target_url.replace("https://", "").replace("http://", "").split('/')[0]
         self.issues = []
 
+    def get_ai_summary(self, issues_list):
+        """
+        Sends findings to Gemini and gets an Executive Summary.
+        """
+        # 1. Get API Key safely
+        api_key = os.getenv("GEMINI_API_KEY")
+        
+        # DEBUG: Check if key exists (Don't print the actual key for security)
+        if not api_key:
+            print("CRITICAL ERROR: GEMINI_API_KEY is missing from Environment!", file=sys.stderr)
+            return "Error: AI API Key is missing. Please add GEMINI_API_KEY to Render Environment."
+
+        if not issues_list:
+            return "The security scan detected no major vulnerabilities. The system appears to follow standard security best practices."
+
+        try:
+            # 2. Configure Gemini
+            genai.configure(api_key=api_key)
+            
+            # 3. Use the correct model
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            
+            prompt = f"""
+            Act as a Senior Cyber Security Consultant.
+            I have run an automated scan on a website and found the following issues:
+            {issues_list}
+            
+            Write a concise, 3-sentence Executive Summary for the client.
+            Focus on the business risk (e.g., "Data theft," "Reputation damage").
+            Do not list the technical fixes yet, just summarize the risk level.
+            """
+            
+            response = model.generate_content(prompt)
+            return response.text
+
+        except Exception as e:
+            # 4. Force print the error to logs
+            print(f"AI GENERATION ERROR: {str(e)}", file=sys.stderr)
+            return "Automated analysis unavailable. Please review specific findings below."
+
     def check_ports(self):
-        print("[*] Scanning common ports...")
-        # Only scan top 5 dangerous ports to keep it fast
-        ports = {
+        print(f"[*] Scanning ports for {self.hostname}...")
+        common_ports = {
             21: "FTP (File Transfer)",
             22: "SSH (Secure Shell)",
-            23: "Telnet (Unencrypted Remote Access)",
-            3306: "MySQL Database",
-            5432: "PostgreSQL Database"
+            23: "Telnet (Insecure)",
+            80: "HTTP (Web)",
+            443: "HTTPS (Secure Web)",
+            3306: "MySQL (Database)",
+            8080: "Alternative HTTP"
         }
-        for port, name in ports.items():
+        
+        for port, service in common_ports.items():
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(0.5) # Very fast timeout
+            sock.settimeout(1)
             result = sock.connect_ex((self.hostname, port))
             if result == 0:
                 self.issues.append({
-                    "title": f"Open Port Detected: {port} ({name})",
-                    "severity": "HIGH",
-                    "impact": "Exposed ports can allow hackers to brute-force passwords or exploit service vulnerabilities directly.",
-                    "fix": f"Close port {port} on your firewall if not absolutely necessary. Use VPNs for remote access."
+                    "title": f"Open Port Detected: {port} ({service})",
+                    "description": f"Port {port} is open to the public. If this is not intended, close it to prevent unauthorized access."
                 })
             sock.close()
 
-    def check_security_headers(self):
-        print("[*] Checking HTTP Headers...")
-        try:
-            resp = requests.get(self.target_url, timeout=5, verify=certifi.where())
-            headers = resp.headers
-            
-            # 1. Clickjacking
-            if "X-Frame-Options" not in headers:
-                self.issues.append({
-                    "title": "Missing Clickjacking Protection (X-Frame-Options)",
-                    "severity": "MEDIUM",
-                    "impact": "Attackers can embed your website inside an invisible frame (iframe) to trick users into clicking buttons they didn't intend to.",
-                    "fix": "Configure your web server to send the 'X-Frame-Options: SAMEORIGIN' header."
-                })
-            
-            # 2. XSS Protection
-            if "Content-Security-Policy" not in headers:
-                self.issues.append({
-                    "title": "Missing Content Security Policy (CSP)",
-                    "severity": "MEDIUM",
-                    "impact": "Without CSP, your site is vulnerable to Cross-Site Scripting (XSS) and data injection attacks.",
-                    "fix": "Implement a 'Content-Security-Policy' header to restrict where scripts and resources can load from."
-                })
-
-            # 3. Server Leak
-            if "Server" in headers or "X-Powered-By" in headers:
-                leaked = headers.get('Server', '') + " " + headers.get('X-Powered-By', '')
-                self.issues.append({
-                    "title": f"Server Information Disclosure: {leaked.strip()}",
-                    "severity": "LOW",
-                    "impact": "Revealing exact software versions helps hackers select specific exploits for your server.",
-                    "fix": "Configure your server (Nginx/Apache) to hide the 'Server' and 'X-Powered-By' headers."
-                })
-
-            # 4. Cookie Security
-            if "Set-Cookie" in headers:
-                cookies = headers['Set-Cookie']
-                if "Secure" not in cookies or "HttpOnly" not in cookies:
-                     self.issues.append({
-                        "title": "Insecure Cookies Detected",
-                        "severity": "MEDIUM",
-                        "impact": "Cookies without 'HttpOnly' can be stolen via XSS. Cookies without 'Secure' can be intercepted over Wifi.",
-                        "fix": "Set the 'Secure' and 'HttpOnly' flags on all session cookies."
-                    })
-
-        except Exception:
-            pass # Connection errors handled in main run
-
-    def check_sensitive_files(self):
-        print("[*] Checking for sensitive files...")
-        # Check robots.txt
-        try:
-            resp = requests.get(self.target_url + "/robots.txt", timeout=3, verify=certifi.where())
-            if resp.status_code == 200:
-                if "admin" in resp.text or "backup" in resp.text or "config" in resp.text:
-                     self.issues.append({
-                        "title": "Sensitive Paths revealed in robots.txt",
-                        "severity": "LOW",
-                        "impact": "Your robots.txt file is telling hackers exactly where your Admin/Backup folders are.",
-                        "fix": "Remove sensitive paths from robots.txt. Use server permissions to block them instead."
-                    })
-        except:
-            pass
-
     def check_ssl(self):
-        print("[*] Verifying SSL...")
+        print(f"[*] Checking SSL for {self.hostname}...")
         try:
-            context = ssl.create_default_context(cafile=certifi.where())
-            with socket.create_connection((self.hostname, 443), timeout=3) as sock:
+            context = ssl.create_default_context()
+            with socket.create_connection((self.hostname, 443)) as sock:
                 with context.wrap_socket(sock, server_hostname=self.hostname) as ssock:
                     cert = ssock.getpeercert()
-                    # If successful, no issue added.
+                    # Basic check passed if no error
         except Exception as e:
-             self.issues.append({
-                "title": "SSL/HTTPS Configuration Error",
-                "severity": "HIGH",
-                "impact": "Users cannot securely connect to your site. Data is sent in plain text and can be stolen.",
-                "fix": "Install a valid SSL Certificate immediately (e.g., Let's Encrypt)."
+            self.issues.append({
+                "title": "SSL Certificate Issue",
+                "description": f"SSL connection failed or certificate is invalid. Error: {str(e)}"
             })
+
+    def check_security_headers(self):
+        print(f"[*] Checking headers for {self.target_url}...")
+        try:
+            # Ensure URL has schema
+            url = self.target_url if self.target_url.startswith("http") else f"https://{self.target_url}"
+            response = requests.get(url, timeout=5)
+            headers = response.headers
+            
+            missing_headers = []
+            if "X-Frame-Options" not in headers:
+                missing_headers.append("X-Frame-Options (Clickjacking Protection)")
+            if "Content-Security-Policy" not in headers:
+                missing_headers.append("Content-Security-Policy (XSS Protection)")
+            if "Strict-Transport-Security" not in headers:
+                missing_headers.append("HSTS (Enforce HTTPS)")
+                
+            if missing_headers:
+                self.issues.append({
+                    "title": "Missing Security Headers",
+                    "description": "The following critical headers are missing: " + ", ".join(missing_headers)
+                })
+        except Exception as e:
+            print(f"Header check error: {e}")
+
+    def check_sensitive_files(self):
+        # Placeholder for file check logic if you had it
+        pass
 
     def generate_report(self):
         print("[*] Generating PDF Report...")
         
         # 1. Get AI Summary
-        # We assume get_ai_summary is already defined in your class
         issue_titles = [i['title'] for i in self.issues]
         ai_summary_text = self.get_ai_summary(issue_titles)
         
@@ -248,16 +151,16 @@ class SecurityScanner:
         
         # Grey box for AI text
         pdf.set_fill_color(245, 245, 245)
-        pdf.set_font('Arial', '', 11) # Standard font for body
+        pdf.set_font('Arial', '', 11)
         pdf.set_text_color(50, 50, 50)
         
-        # Print the AI text (Multi-cell wraps text automatically)
+        # Print AI text (multi_cell automatically wraps text)
         pdf.multi_cell(0, 8, ai_summary_text, 0, 'L', True)
-        pdf.ln(10) # Add space after the summary
+        pdf.ln(10)
 
-        # --- SECTION 3: DETAILED FINDINGS (The part you were missing!) ---
+        # --- SECTION 3: DETAILED FINDINGS ---
         pdf.set_font('Arial', 'B', 14)
-        pdf.set_text_color(231, 76, 60) # Red color for "Findings"
+        pdf.set_text_color(231, 76, 60) # Red
         pdf.cell(0, 10, "DETAILED VULNERABILITY FINDINGS", 0, 1, 'L')
         pdf.set_text_color(0, 0, 0) # Reset to black
         
@@ -266,59 +169,15 @@ class SecurityScanner:
             pdf.cell(0, 10, "No high-risk vulnerabilities detected.", 0, 1)
         else:
             for issue in self.issues:
-                # Title of the issue
                 pdf.set_font('Arial', 'B', 12)
-                pdf.cell(0, 8, f"• {issue['title']}", 0, 1)
+                pdf.cell(0, 8, f"- {issue['title']}", 0, 1)
                 
-                # Description (Indented slightly)
                 pdf.set_font('Arial', '', 11)
                 pdf.set_x(15) # Indent
                 pdf.multi_cell(0, 6, f"{issue['description']}")
-                pdf.ln(3) # Small gap between issues
+                pdf.ln(3)
 
-        # --- SECTION 4: SAVE FILE ---
+        # Save File
         filename = f"Audit_Report_{self.hostname}.pdf"
         pdf.output(filename)
         return filename
-
-    def run(self):
-        self.check_ports()
-        self.check_ssl()
-        self.check_security_headers()
-        self.check_sensitive_files()
-        self.generate_report()
-
-    def get_ai_summary(self, issues_list):
-        # Configure with your key (Best practice: Use environment variables in production)
-        # For now, you can paste it here, but don't commit it to Public GitHub!
-        GENAI_KEY = genai.configure(api_key=os.getenv("GEMINI_API_KEY")) 
-        
-        if not issues_list:
-            return "The security scan detected no major vulnerabilities. The system appears to follow standard security best practices."
-
-        try:
-            genai.configure(api_key=GENAI_KEY)
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            
-            # The Prompt
-            prompt = f"""
-            Act as a Senior Cyber Security Consultant.
-            I have run an automated scan on a website and found the following issues:
-            {issues_list}
-            
-            Write a concise, 3-sentence Executive Summary for the client.
-            Focus on the business risk (e.g., "Data theft," "Reputation damage").
-            Do not list the technical fixes yet, just summarize the risk level.
-            Keep the tone professional and urgent if there are High risks.
-            """
-            
-            response = model.generate_content(prompt)
-            return response.text
-        except Exception as e:
-            print(f"AI Error: {e}")
-            return "Automated analysis unavailable. Please review specific findings below."
-
-if __name__ == "__main__":
-    target = input("Enter website URL: ")
-    scanner = SecurityScanner(target)
-    scanner.run()
