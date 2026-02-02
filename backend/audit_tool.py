@@ -226,35 +226,57 @@ class SecurityScanner:
             })
 
     def generate_report(self):
-        # 1. Generate the AI Summary BEFORE creating the PDF
-        print("[*] Consulting AI for Executive Summary...")
+        print("[*] Generating PDF Report...")
         
-        # Prepare a simple list of titles for the AI
+        # 1. Get AI Summary
+        # We assume get_ai_summary is already defined in your class
         issue_titles = [i['title'] for i in self.issues]
         ai_summary_text = self.get_ai_summary(issue_titles)
         
         pdf = AdvancedPDF()
         pdf.add_page()
         
-        # ... (Your existing Header Code) ...
+        # --- SECTION 1: HEADER ---
+        pdf.set_font('Arial', 'B', 16)
+        pdf.cell(0, 10, f"Security Audit: {self.hostname}", 0, 1, 'C')
+        pdf.ln(5)
 
-        # --- NEW: AI Executive Summary Section ---
+        # --- SECTION 2: AI EXECUTIVE SUMMARY ---
         pdf.set_font('Arial', 'B', 14)
         pdf.set_text_color(41, 128, 185) # Blue
         pdf.cell(0, 10, "AI-POWERED EXECUTIVE SUMMARY", 0, 1, 'L')
         
-        # Draw a box for the AI text
-        pdf.set_fill_color(245, 245, 245) # Very light gray
-        pdf.rect(10, pdf.get_y(), 190, 25, 'F')
-        
-        pdf.set_xy(12, pdf.get_y() + 2)
-        pdf.set_font('Arial', 'I', 10)
+        # Grey box for AI text
+        pdf.set_fill_color(245, 245, 245)
+        pdf.set_font('Arial', '', 11) # Standard font for body
         pdf.set_text_color(50, 50, 50)
-        pdf.multi_cell(186, 6, ai_summary_text)
-        pdf.ln(10) # Add space after the box
-
-        # ... (Rest of your existing PDF code: Findings, Grades, etc.) ...
         
+        # Print the AI text (Multi-cell wraps text automatically)
+        pdf.multi_cell(0, 8, ai_summary_text, 0, 'L', True)
+        pdf.ln(10) # Add space after the summary
+
+        # --- SECTION 3: DETAILED FINDINGS (The part you were missing!) ---
+        pdf.set_font('Arial', 'B', 14)
+        pdf.set_text_color(231, 76, 60) # Red color for "Findings"
+        pdf.cell(0, 10, "DETAILED VULNERABILITY FINDINGS", 0, 1, 'L')
+        pdf.set_text_color(0, 0, 0) # Reset to black
+        
+        if not self.issues:
+            pdf.set_font('Arial', 'I', 12)
+            pdf.cell(0, 10, "No high-risk vulnerabilities detected.", 0, 1)
+        else:
+            for issue in self.issues:
+                # Title of the issue
+                pdf.set_font('Arial', 'B', 12)
+                pdf.cell(0, 8, f"• {issue['title']}", 0, 1)
+                
+                # Description (Indented slightly)
+                pdf.set_font('Arial', '', 11)
+                pdf.set_x(15) # Indent
+                pdf.multi_cell(0, 6, f"{issue['description']}")
+                pdf.ln(3) # Small gap between issues
+
+        # --- SECTION 4: SAVE FILE ---
         filename = f"Audit_Report_{self.hostname}.pdf"
         pdf.output(filename)
         return filename
