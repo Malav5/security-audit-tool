@@ -276,7 +276,7 @@ class SecurityScanner:
 
         try:
             genai.configure(api_key=GENAI_KEY)
-            model = genai.GenerativeModel('gemini-pro')
+            model = genai.GenerativeModel('gemini-1.5-flash')
             
             # The Prompt
             prompt = f"""
