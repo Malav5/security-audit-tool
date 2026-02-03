@@ -73,23 +73,13 @@ async def generate_audit(
     # 1. Initialize the Scanner
     scanner = SecurityScanner(target_url)
     
-    # 2. Run the checks (manually run for more control or use scanner.run)
-    scanner.check_ports()
-    scanner.check_ssl()
-    scanner.check_security_headers()
-    scanner.check_sensitive_files()
-    scanner.check_critical_exposures()
-    scanner.check_email_security()
+    # 2. Run all checks and generate the report
+    pdf_filename = scanner.run(is_premium=is_premium)
     
-    # 3. Generate PDF 
-    pdf_filename = scanner.generate_report(is_premium=is_premium)
-    
-    # 4. Save to Supabase if the user is logged in
+    # 3. Save to Supabase if the user is logged in
     if is_premium and user_id:
-        risk_score = "F"
+        risk_score = scanner.get_risk_score()
         issue_count = len(scanner.issues)
-        if issue_count == 0: risk_score = "A+"
-        elif issue_count < 3: risk_score = "B"
 
         scan_data = {
             "user_id": str(user_id),
@@ -99,10 +89,12 @@ async def generate_audit(
             "pdf_url": pdf_filename
         }
         try:
-            result = supabase.table("scans").insert(scan_data).execute()
+            # We use the user's token to satisfy Supabase RLS policies
+            result = supabase.postgrest.auth(token).table("scans").insert(scan_data).execute()
             print(f"Scan saved successfully: {result}")
         except Exception as e:
             print(f"CRITICAL: Error saving scan to Supabase: {e}")
+
 
 
     # 5. Check if file exists and return

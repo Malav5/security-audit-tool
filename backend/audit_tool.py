@@ -8,6 +8,11 @@ from fpdf import FPDF
 import google.generativeai as genai
 import os
 import dns.resolver
+import urllib3
+
+# Suppress InsecureRequestWarning for cleaner logs
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 
 # --- BRANDING ---
 AGENCY_NAME = "CyberSecure India"
@@ -313,6 +318,21 @@ class SecurityScanner:
         pdf.output(filename)
         print(f"\n✅ Report Generated: {filename}")
         return filename
+
+    def get_risk_score(self):
+        """Returns the calculated grade based on the latest tiered logic."""
+        high_risks = len([i for i in self.issues if i['severity'] == "HIGH"])
+        medium_risks = len([i for i in self.issues if i['severity'] == "MEDIUM"])
+
+        if high_risks > 0:
+            return "F"
+        elif medium_risks == 0:
+            return "A"
+        elif medium_risks < 3:
+            return "B"
+        else:
+            return "C"
+
 
     def check_critical_exposures(self):
         print("[*] Hunting for Critical Config Leaks (.env, .git)...")
