@@ -116,7 +116,7 @@ class AdvancedPDF(FPDF):
         else:
             # Masked text effect
             self.set_text_color(150, 150, 150)
-            self.multi_cell(0, 6, "[LOCKED] [Hidden] Upgrade to Premium to unlock this detailed impact analysis.")
+            self.multi_cell(0, 6, "[LOCKED] Upgrade to Premium to unlock this detailed impact analysis.")
             self.set_text_color(*COLOR_TEXT_MAIN)
 
 
@@ -133,7 +133,7 @@ class AdvancedPDF(FPDF):
         else:
             # Placeholder for free users
             self.set_text_color(150, 150, 150)
-            self.multi_cell(0, 6, "[LOCKED] [Hidden] Upgrade to Premium to unlock this detailed fix.")
+            self.multi_cell(0, 6, "[LOCKED] Upgrade to Premium to unlock this detailed fix.")
             self.set_text_color(50, 50, 50)
 
         
