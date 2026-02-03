@@ -233,21 +233,9 @@ class SecurityScanner:
             pass # Connection errors handled in main run
 
     def check_sensitive_files(self):
-        print("[*] Checking for sensitive files...")
-        # Check robots.txt
-        try:
-            resp = requests.get(self.target_url + "/robots.txt", timeout=3, verify=certifi.where(), headers=self.headers)
-            if resp.status_code == 200:
+        # We've removed noisy checks (like robots.txt) for better accuracy.
+        pass
 
-                if "admin" in resp.text or "backup" in resp.text or "config" in resp.text:
-                     self.issues.append({
-                        "title": "Sensitive Paths revealed in robots.txt",
-                        "severity": "LOW",
-                        "impact": "Your robots.txt file is telling hackers exactly where your Admin/Backup folders are.",
-                        "fix": "Remove sensitive paths from robots.txt. Use server permissions to block them instead."
-                    })
-        except:
-            pass
 
     def check_ssl(self):
         print("[*] Verifying SSL...")
@@ -283,30 +271,26 @@ class SecurityScanner:
         pdf.set_font('Arial', '', 10)
         pdf.cell(0, 6, f"Scan Date: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}", 0, 1)
         
-        # Weighted Scoring Logic
-        total_risk_points = 0
-        for issue in self.issues:
-            if issue['severity'] == "HIGH": total_risk_points += 40
-            elif issue['severity'] == "MEDIUM": total_risk_points += 15
-            else: total_risk_points += 5
+        # Tiered Scoring Logic
+        high_risks = len([i for i in self.issues if i['severity'] == "HIGH"])
+        medium_risks = len([i for i in self.issues if i['severity'] == "MEDIUM"])
 
-        score = max(0, 100 - total_risk_points)
-        
         pdf.set_xy(150, pdf.get_y() - 12)
         pdf.set_font('Arial', 'B', 24)
-        
-        if score >= 95:
-            pdf.set_text_color(*COLOR_SAFE)
-            pdf.cell(40, 10, "A+", 0, 1, 'C')
-        elif score >= 75:
-            pdf.set_text_color(*COLOR_MEDIUM_RISK)
-            pdf.cell(40, 10, "B", 0, 1, 'C')
-        elif score >= 50:
-            pdf.set_text_color(*COLOR_MEDIUM_RISK)
-            pdf.cell(40, 10, "C", 0, 1, 'C')
-        else:
+
+        if high_risks > 0:
             pdf.set_text_color(*COLOR_HIGH_RISK)
             pdf.cell(40, 10, "F", 0, 1, 'C')
+        elif medium_risks == 0:
+            pdf.set_text_color(*COLOR_SAFE)
+            pdf.cell(40, 10, "A", 0, 1, 'C')
+        elif medium_risks < 3:
+            pdf.set_text_color(*COLOR_MEDIUM_RISK)
+            pdf.cell(40, 10, "B", 0, 1, 'C')
+        else:
+            pdf.set_text_color(*COLOR_MEDIUM_RISK)
+            pdf.cell(40, 10, "C", 0, 1, 'C')
+
 
             
         pdf.ln(20)
@@ -368,11 +352,11 @@ class SecurityScanner:
             # --- FORCE GOOGLE DNS (The Fix) ---
             resolver = dns.resolver.Resolver()
             resolver.nameservers = ['8.8.8.8', '1.1.1.1'] 
+            resolver.lifetime = 5.0
             # ----------------------------------
 
             # 1. Check SPF
             try:
-                # Use 'resolver.resolve' instead of 'dns.resolver.resolve'
                 answers = resolver.resolve(domain, 'TXT')
                 spf_found = False
                 for rdata in answers:
@@ -386,32 +370,36 @@ class SecurityScanner:
                         "impact": "You have not authorized any servers to send email for you. Hackers can easily spoof your domain to send phishing emails.",
                         "fix": "Add a TXT record for 'v=spf1' listing your authorized email servers."
                     })
-            except Exception:
-                # If lookup fails, assume missing for now (or could be strict timeout)
+            except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
                 self.issues.append({
                     "title": "Missing SPF Record (Email Security)",
                     "severity": "MEDIUM",
                     "impact": "No SPF record found. Email spoofing is possible.",
                     "fix": "Create an SPF TXT record."
                 })
+            except Exception as e:
+                print(f"SPF Check failed: {e}")
 
             # 2. Check DMARC
             try:
                 dmarc_domain = f"_dmarc.{domain}"
                 resolver.resolve(dmarc_domain, 'TXT')
                 # If found, do nothing (Good)
-            except Exception:
+            except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
                 self.issues.append({
                     "title": "Missing DMARC Record",
                     "severity": "LOW",
                     "impact": "DMARC tells email providers what to do if an email fails SPF checks.",
                     "fix": "Add a TXT record for '_dmarc'."
                 })
+            except Exception as e:
+                print(f"DMARC Check failed: {e}")
 
         except ImportError:
             print("Error: dnspython library not installed.")
         except Exception as e:
             print(f"DNS Check failed: {e}")
+
 
     def check_http_methods(self):
         print("[*] Checking HTTP Methods...")
