@@ -166,6 +166,17 @@ function App() {
     }
   };
 
+  const handleViewHistoryScan = (scan) => {
+    setScanResults({
+      hostname: scan.hostname,
+      grade: scan.risk_score,
+      issues: scan.findings || [], // Load the saved findings
+      pdf_filename: scan.pdf_url
+    });
+    setRevealedFixes({});
+    setView('results');
+  };
+
   const handleDownloadReport = async (filename) => {
     if (!session) {
       setShowAuth(true);
@@ -242,7 +253,7 @@ function App() {
 
       </header>
 
-      <main className="z-10 w-full max-w-5xl pt-20">
+      <main className="z-10 w-full max-w-7xl pt-20 px-4 md:px-12">
         <AnimatePresence mode="wait">
           {view === 'home' && (
             <motion.div
@@ -250,56 +261,76 @@ function App() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="flex flex-col items-center text-center space-y-12"
+              className="flex flex-col items-center space-y-16"
             >
-              {/* Hero Section */}
-              <div className="space-y-6 max-w-3xl">
-                <div className="inline-flex items-center px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-mono mb-4 tracking-widest uppercase">
-                  <span className="w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse"></span>
-                  System Online & Ready
-                </div>
-                <h1 className="text-5xl md:text-7xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-cyan-100 to-cyan-400 pb-2">
-                  Enterprise Security <br /> & Compliance Audit
-                </h1>
-                <p className="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto">
-                  Scan for vulnerabilities and instantly map them to <span className="text-cyan-400 font-semibold">GDPR, SOC2, and ISO 27001</span> standards.
-                  Identify hidden subdomains and receive auto-pilot remediation code.
-                </p>
-              </div>
-
-              {/* Input Form */}
-              <div className="w-full max-w-2xl relative group">
-                <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-600 to-cyan-400 rounded-xl blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
-                <form onSubmit={handleScan} className="relative bg-[#0F172A] border border-slate-700 rounded-xl p-2 flex flex-col md:flex-row gap-2 shadow-2xl">
-                  <div className="relative flex-grow flex items-center">
-                    <Globe className="absolute left-4 text-slate-500 w-5 h-5" />
-                    <input
-                      type="text"
-                      placeholder="Enter website URL (e.g. google.com)"
-                      value={url}
-                      onChange={(e) => setUrl(e.target.value)}
-                      disabled={isLoading}
-                      className="w-full bg-transparent text-white placeholder-slate-500 px-12 py-4 rounded-lg focus:outline-none font-mono text-lg"
-                    />
+              {/* Hero Section - Split Layout for Width */}
+              <div className="flex flex-col lg:flex-row items-center gap-12 text-center lg:text-left w-full">
+                <div className="space-y-8 flex-[1.2]">
+                  <div className="inline-flex items-center px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-mono tracking-widest uppercase">
+                    <span className="w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse"></span>
+                    Global Security Nodes Online
                   </div>
-                  <button
-                    type="submit"
-                    disabled={isLoading}
-                    className="bg-cyan-500 hover:bg-cyan-600 text-black font-bold py-4 px-8 rounded-lg shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 min-w-[200px]"
-                  >
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                        <span>Scanning...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Activity className="w-5 h-5" />
-                        <span>Run {session ? 'Enterprise Compliance' : 'Free Security'} Scan</span>
-                      </>
-                    )}
-                  </button>
-                </form>
+                  <h1 className="text-5xl md:text-8xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-cyan-100 to-cyan-400 pb-2 leading-[1.1]">
+                    Enterprise <br /> Compliance <br /> Intelligence
+                  </h1>
+                  <p className="text-xl md:text-2xl text-slate-400 max-w-2xl">
+                    Automated vulnerability discovery mapped to <span className="text-cyan-400 font-semibold">GDPR, SOC2, and ISO 27001</span>.
+                    Monitor your global attack surface in real-time.
+                  </p>
+
+                  {/* Enhanced Input Form */}
+                  <div className="w-full relative group">
+                    <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-600 to-cyan-400 rounded-xl blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
+                    <form onSubmit={handleScan} className="relative bg-[#0F172A] border border-slate-700 rounded-xl p-2 flex flex-col sm:flex-row gap-2 shadow-2xl">
+                      <div className="relative flex-grow flex items-center">
+                        <Globe className="absolute left-4 text-slate-500 w-5 h-5" />
+                        <input
+                          type="text"
+                          placeholder="Target domain (e.g. cloudflare.com)"
+                          value={url}
+                          onChange={(e) => setUrl(e.target.value)}
+                          disabled={isLoading}
+                          className="w-full bg-transparent text-white placeholder-slate-500 px-12 py-4 rounded-lg focus:outline-none font-mono text-lg"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={isLoading}
+                        className="bg-cyan-500 hover:bg-cyan-600 text-black font-bold py-4 px-10 rounded-lg shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 text-lg"
+                      >
+                        {isLoading ? (
+                          <>
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                            <span>Scanning...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Activity className="w-5 h-5" />
+                            <span>Run Enterprise Audit</span>
+                          </>
+                        )}
+                      </button>
+                    </form>
+                  </div>
+                </div>
+
+                {/* Side feature grid */}
+                <div className="hidden lg:grid grid-cols-2 gap-6 flex-1">
+                  {[
+                    { icon: Shield, title: "Compliance", desc: "Automated GDPR/SOC2 Mapping" },
+                    { icon: Server, title: "Discovery", desc: "Deep Subdomain Enumeration" },
+                    { icon: Lock, title: "Privacy", desc: "HSTS & SSL Integrity Audit" },
+                    { icon: FileText, title: "Remediation", desc: "Nginx/Apache Hotfix Scripts" },
+                    { icon: Activity, title: "Real-time", desc: "Live Vulnerability Heuristics" },
+                    { icon: ExternalLink, title: "Portal", desc: "Interactive Interactive Dashboard" }
+                  ].map((feat, i) => (
+                    <div key={i} className="bg-slate-900/40 border border-slate-800 p-8 rounded-3xl hover:border-cyan-500/30 transition-all hover:bg-slate-900/60 group cursor-default">
+                      <feat.icon className="w-10 h-10 text-cyan-400 mb-4 group-hover:scale-110 transition-transform" />
+                      <h3 className="font-bold text-lg text-white mb-2">{feat.title}</h3>
+                      <p className="text-slate-500 text-sm leading-relaxed">{feat.desc}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {/* Status Indicators */}
@@ -313,15 +344,15 @@ function App() {
                       exit={{ opacity: 0, y: -10 }}
                       className="flex flex-col items-center gap-4"
                     >
-                      <div className="w-64 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                      <div className="w-80 h-1.5 bg-slate-800 rounded-full overflow-hidden">
                         <motion.div
-                          className="h-full bg-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]"
+                          className="h-full bg-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.6)]"
                           initial={{ width: "0%" }}
                           animate={{ width: "100%" }}
                           transition={{ duration: 15, ease: "linear", repeat: Infinity }}
                         />
                       </div>
-                      <p className="text-cyan-400 font-mono text-xs tracking-[0.3em] uppercase animate-pulse">
+                      <p className="text-cyan-400 font-mono text-sm tracking-[0.4em] uppercase animate-pulse">
                         {loadingMessages[loadingStep]}
                       </p>
                     </motion.div>
@@ -332,10 +363,10 @@ function App() {
                       key="error"
                       initial={{ opacity: 0, scale: 0.9 }}
                       animate={{ opacity: 1, scale: 1 }}
-                      className="flex items-center gap-3 text-red-400 bg-red-950/20 border border-red-900/30 px-6 py-3 rounded-lg"
+                      className="flex items-center gap-3 text-red-100 bg-red-500/10 border border-red-500/20 px-8 py-4 rounded-2xl"
                     >
-                      <AlertCircle className="w-5 h-5" />
-                      <span className="text-sm font-medium">{error}</span>
+                      <AlertCircle className="w-5 h-5 text-red-500" />
+                      <span className="text-base font-medium">{error}</span>
                     </motion.div>
                   )}
 
@@ -344,15 +375,12 @@ function App() {
                       key="success"
                       initial={{ opacity: 0, scale: 0.9 }}
                       animate={{ opacity: 1, scale: 1 }}
-                      className="flex flex-col items-center gap-3"
+                      className="flex flex-col items-center gap-4"
                     >
-                      <div className="flex items-center gap-3 text-emerald-400 bg-emerald-950/20 border border-emerald-900/30 px-6 py-3 rounded-lg">
-                        <CheckCircle className="w-5 h-5" />
-                        <span className="text-sm font-semibold">{session ? 'Premium Report' : 'Free Assessment'} Downloaded!</span>
+                      <div className="flex items-center gap-3 text-emerald-100 bg-emerald-500/10 border border-emerald-500/20 px-8 py-4 rounded-2xl">
+                        <CheckCircle className="w-5 h-5 text-emerald-500" />
+                        <span className="text-base font-bold">Audit Complete. Results Available Below.</span>
                       </div>
-                      {!session && (
-                        <p className="text-slate-500 text-xs">Login to unlock detailed fixes and vulnerability metrics.</p>
-                      )}
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -372,8 +400,8 @@ function App() {
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-slate-900/40 border border-slate-800 p-8 rounded-2xl backdrop-blur-md">
                 <div className="flex items-center gap-6">
                   <div className={`w-20 h-20 rounded-2xl flex items-center justify-center text-4xl font-black shadow-2xl ${scanResults.grade === 'A' ? 'bg-emerald-500 text-black shadow-emerald-500/20' :
-                      scanResults.grade === 'F' ? 'bg-red-500 text-white shadow-red-500/20' :
-                        'bg-orange-500 text-black shadow-orange-500/20'
+                    scanResults.grade === 'F' ? 'bg-red-500 text-white shadow-red-500/20' :
+                      'bg-orange-500 text-black shadow-orange-500/20'
                     }`}>
                     {scanResults.grade}
                   </div>
@@ -440,8 +468,8 @@ function App() {
                           )}
                         </div>
                         <span className={`px-3 py-1 rounded-full text-[10px] font-black tracking-widest uppercase ${issue.severity === 'HIGH' ? 'bg-red-500/10 text-red-500 border border-red-500/20' :
-                            issue.severity === 'MEDIUM' ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20' :
-                              'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                          issue.severity === 'MEDIUM' ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20' :
+                            'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
                           }`}>
                           {issue.severity}
                         </span>
@@ -522,9 +550,13 @@ function App() {
               ) : userScans.length > 0 ? (
                 <div className="grid grid-cols-1 gap-4">
                   {userScans.map((scan) => (
-                    <div key={scan.id} className="bg-slate-900/50 border border-slate-800 rounded-xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-6 hover:border-slate-700 transition group">
+                    <div
+                      key={scan.id}
+                      onClick={() => handleViewHistoryScan(scan)}
+                      className="bg-slate-900/50 border border-slate-800 rounded-xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-6 hover:border-cyan-500/30 transition group cursor-pointer"
+                    >
                       <div className="flex items-center gap-5">
-                        <div className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-2xl ${scan.risk_score === 'A+' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' :
+                        <div className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-2xl ${scan.risk_score === 'A' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' :
                           scan.risk_score === 'B' ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20' :
                             'bg-red-500/10 text-red-500 border border-red-500/20'
                           }`}>
@@ -543,10 +575,13 @@ function App() {
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition cursor-not-allowed opacity-50">
-                          <ExternalLink className="w-4 h-4" /> View Online
+                        <button className="flex items-center gap-2 px-6 py-2 rounded-xl bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition">
+                          <ExternalLink className="w-4 h-4" /> View Details
                         </button>
-                        <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-500 text-black text-sm font-bold hover:bg-cyan-400 transition shadow-lg shadow-cyan-500/10">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDownloadReport(scan.pdf_url); }}
+                          className="flex items-center gap-2 px-6 py-2 rounded-xl bg-cyan-500 text-black text-sm font-bold hover:bg-cyan-400 transition shadow-lg shadow-cyan-500/10"
+                        >
                           <Download className="w-4 h-4" /> Download PDF
                         </button>
                       </div>

@@ -87,7 +87,8 @@ async def generate_audit(
             "hostname": scanner.hostname,
             "risk_score": risk_score,
             "issue_count": issue_count,
-            "pdf_url": pdf_filename
+            "pdf_url": pdf_filename,
+            "findings": results["issues"] # Save the full research for the portal
         }
         try:
             supabase.postgrest.auth(token).table("scans").insert(scan_data).execute()
