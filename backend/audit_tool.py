@@ -59,6 +59,14 @@ class AdvancedPDF(FPDF):
         self.set_text_color(128, 128, 128)
         self.cell(0, 10, f'Page {self.page_no()} | Automated Assessment by {AGENCY_NAME}', 0, 0, 'C')
 
+        # CTA for Free Users
+        if not getattr(self, 'is_premium', True):
+            self.set_y(-25)
+            self.set_font('Arial', 'B', 10)
+            self.set_text_color(231, 76, 60) # Red for urgency
+            self.cell(0, 10, f"Unlock Full Report & Fixes at {AGENCY_SITE}", 0, 0, 'C', link=f"https://{AGENCY_SITE}")
+
+
     def draw_section_header(self, title):
         self.ln(10)
         self.set_font('Arial', 'B', 14)
@@ -69,6 +77,8 @@ class AdvancedPDF(FPDF):
         self.ln(5)
 
     def add_issue_block(self, title, impact, fix, severity="HIGH"):
+        is_premium = getattr(self, 'is_premium', True)
+
         # Select Color based on severity
         if severity == "HIGH":
             self.set_fill_color(*COLOR_HIGH_RISK)
@@ -100,7 +110,14 @@ class AdvancedPDF(FPDF):
         self.set_font('Arial', 'B', 9)
         self.cell(15, 6, "Impact:", 0, 0)
         self.set_font('Arial', '', 9)
-        self.multi_cell(0, 6, impact)
+        
+        if is_premium:
+            self.multi_cell(0, 6, impact)
+        else:
+            # Masked text effect
+            self.set_text_color(150, 150, 150)
+            self.multi_cell(0, 6, "🔒 [Hidden] Upgrade to Premium to unlock this detailed impact analysis.")
+            self.set_text_color(*COLOR_TEXT_MAIN)
 
         # Fix Section
         self.set_x(10)
@@ -108,10 +125,18 @@ class AdvancedPDF(FPDF):
         self.set_text_color(41, 128, 185) # Blue for fix
         self.cell(22, 6, "Remediation:", 0, 0)
         self.set_font('Arial', '', 9)
-        self.set_text_color(50, 50, 50)
-        self.multi_cell(0, 6, fix)
+        
+        if is_premium:
+            self.set_text_color(50, 50, 50)
+            self.multi_cell(0, 6, fix)
+        else:
+            # Placeholder for free users
+            self.set_text_color(150, 150, 150)
+            self.multi_cell(0, 6, "🔒 [Hidden] Upgrade to Premium to unlock this detailed fix.")
+            self.set_text_color(50, 50, 50)
         
         self.ln(3) # Spacer
+
 
 class SecurityScanner:
     def __init__(self, target_url):
@@ -226,9 +251,11 @@ class SecurityScanner:
                 "fix": "Install a valid SSL Certificate immediately (e.g., Let's Encrypt)."
             })
 
-    def generate_report(self):
+    def generate_report(self, is_premium=False):
         pdf = AdvancedPDF()
+        pdf.is_premium = is_premium
         pdf.add_page()
+
         
         # --- Executive Summary Box ---
         pdf.set_fill_color(240, 240, 240)
@@ -354,17 +381,19 @@ class SecurityScanner:
         except Exception as e:
             print(f"DNS Check failed: {e}")
 
-    def run(self):
-    self.check_ports()
-    self.check_ssl()
-    self.check_security_headers()
-    self.check_sensitive_files()
+    def run(self, is_premium=False):
+        self.check_ports()
+        self.check_ssl()
+        self.check_security_headers()
+        self.check_sensitive_files()
 
-    # --- THE NEW REAL STUFF ---
-    self.check_critical_exposures() # <--- The Source Code Heist
-    self.check_email_security()     # <--- The Email Imposter
+        # --- THE NEW REAL STUFF ---
+        self.check_critical_exposures() # <--- The Source Code Heist
+        self.check_email_security()     # <--- The Email Imposter
 
-    self.generate_report()
+        return self.generate_report(is_premium=is_premium)
+
+
 
 if __name__ == "__main__":
     target = input("Enter website URL: ")

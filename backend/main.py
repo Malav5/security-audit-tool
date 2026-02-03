@@ -46,7 +46,8 @@ async def generate_audit(request: ScanRequest, background_tasks: BackgroundTasks
     scanner.check_sensitive_files()
     
     # 3. Generate PDF (This now returns the filename)
-    pdf_filename = scanner.generate_report()
+    pdf_filename = scanner.generate_report(is_premium=False)
+
     
     # 4. Check if file exists
     if os.path.exists(pdf_filename):

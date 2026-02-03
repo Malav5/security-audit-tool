@@ -134,7 +134,8 @@ function App() {
               {isLoading ? (
                 <>
                   <Activity className="w-5 h-5 animate-spin" />
-                  <span>Scanning...</span>
+                  <span>Generating Free Assessment...</span>
+
                 </>
               ) : (
                 <>
