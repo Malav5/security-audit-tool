@@ -166,7 +166,7 @@ class SecurityScanner:
         else:
             self.target_url = target_url
         self.parsed_url = urlparse(self.target_url)
-        self.hostname = self.parsed_url.netloc
+        self.hostname = self.parsed_url.netloc.split(':')[0] # Strip ports
         self.issues = []
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
@@ -174,8 +174,7 @@ class SecurityScanner:
 
 
     def check_ports(self):
-        print("[*] Scanning common ports...")
-        # Only scan top 5 dangerous ports to keep it fast
+        print(f"[*] Scanning common ports for {self.hostname}...")
         ports = {
             21: "FTP (File Transfer)",
             22: "SSH (Secure Shell)",
@@ -183,20 +182,26 @@ class SecurityScanner:
             3306: "MySQL Database",
             5432: "PostgreSQL Database"
         }
-        for port, name in ports.items():
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(0.5) # Very fast timeout
-            result = sock.connect_ex((self.hostname, port))
-            if result == 0:
-                self.issues.append({
-                    "title": f"Open Port Detected: {port} ({name})",
-                    "severity": "HIGH",
-                    "impact": "Exposed ports can allow hackers to brute-force passwords or exploit service vulnerabilities directly.",
-                    "fix": f"Close port {port} on your firewall if not absolutely necessary. Use VPNs for remote access.",
-                    "compliance": ["ISO 27001", "SOC2 Control CC6.1"],
-                    "code_snippet": f"# Block port {port} on UFW\nsudo ufw deny {port}"
-                })
-            sock.close()
+        try:
+            for port, name in ports.items():
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(0.5) 
+                # connect_ex returns 0 on success, or an errno on failure
+                result = sock.connect_ex((self.hostname, port))
+                if result == 0:
+                    self.issues.append({
+                        "title": f"Open Port Detected: {port} ({name})",
+                        "severity": "HIGH",
+                        "impact": "Exposed ports can allow hackers to brute-force passwords or exploit service vulnerabilities directly.",
+                        "fix": f"Close port {port} on your firewall if not absolutely necessary.",
+                        "compliance": ["ISO 27001", "SOC2 Control CC6.1"],
+                        "code_snippet": f"# Block port {port} on UFW\nsudo ufw deny {port}"
+                    })
+                sock.close()
+        except socket.gaierror:
+            print(f"    [!] DNS Resolution failed for {self.hostname}. Skipping port scan.")
+        except Exception as e:
+            print(f"    [!] Port scan error: {e}")
 
     def discover_subdomains(self):
         print("[*] Performing Attack Surface Discovery (Subdomains)...")
