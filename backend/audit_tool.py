@@ -277,24 +277,19 @@ class SecurityScanner:
         pdf.cell(0, 6, f"Scan Date: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}", 0, 1)
         
         # Tiered Scoring Logic
-        high_risks = len([i for i in self.issues if i['severity'] == "HIGH"])
-        medium_risks = len([i for i in self.issues if i['severity'] == "MEDIUM"])
+        grade = self.get_risk_score()
 
         pdf.set_xy(150, pdf.get_y() - 12)
         pdf.set_font('Arial', 'B', 24)
 
-        if high_risks > 0:
+        if grade == "F":
             pdf.set_text_color(*COLOR_HIGH_RISK)
-            pdf.cell(40, 10, "F", 0, 1, 'C')
-        elif medium_risks == 0:
+        elif grade == "A":
             pdf.set_text_color(*COLOR_SAFE)
-            pdf.cell(40, 10, "A", 0, 1, 'C')
-        elif medium_risks < 3:
-            pdf.set_text_color(*COLOR_MEDIUM_RISK)
-            pdf.cell(40, 10, "B", 0, 1, 'C')
         else:
             pdf.set_text_color(*COLOR_MEDIUM_RISK)
-            pdf.cell(40, 10, "C", 0, 1, 'C')
+            
+        pdf.cell(40, 10, grade, 0, 1, 'C')
 
 
             
@@ -369,12 +364,11 @@ class SecurityScanner:
             import dns.resolver
             domain = self.hostname
             
-            # --- FORCE GOOGLE DNS (The Fix) ---
+            # --- FORCE GOOGLE DNS ---
             resolver = dns.resolver.Resolver()
             resolver.nameservers = ['8.8.8.8', '1.1.1.1'] 
             resolver.lifetime = 5.0
-            # ----------------------------------
-
+            
             # 1. Check SPF
             try:
                 answers = resolver.resolve(domain, 'TXT')
@@ -404,7 +398,6 @@ class SecurityScanner:
             try:
                 dmarc_domain = f"_dmarc.{domain}"
                 resolver.resolve(dmarc_domain, 'TXT')
-                # If found, do nothing (Good)
             except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
                 self.issues.append({
                     "title": "Missing DMARC Record",
@@ -415,8 +408,6 @@ class SecurityScanner:
             except Exception as e:
                 print(f"DMARC Check failed: {e}")
 
-        except ImportError:
-            print("Error: dnspython library not installed.")
         except Exception as e:
             print(f"DNS Check failed: {e}")
 
