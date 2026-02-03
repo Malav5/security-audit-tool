@@ -9,23 +9,27 @@ const api = axios.create({
     },
 });
 
-export const generateAudit = async (url) => {
+export const generateAudit = async (url, token = null) => {
     try {
-        const response = await api.post('/generate-audit', { url }, {
-            responseType: 'blob', // Important for PDF download
-        });
+        const config = {
+            responseType: 'blob',
+            headers: {}
+        };
+
+        if (token) {
+            config.headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        const response = await api.post('/generate-audit', { url }, config);
         return response.data;
     } catch (error) {
         if (error.response) {
-            // The request was made and the server responded with a status code
-            // that falls out of the range of 2xx
             throw new Error(error.response.data.detail || 'Audit generation failed');
         } else if (error.request) {
-            // The request was made but no response was received
             throw new Error('No response from server. Is the backend running?');
         } else {
-            // Something happened in setting up the request that triggered an Error
             throw new Error(error.message);
         }
     }
 };
+

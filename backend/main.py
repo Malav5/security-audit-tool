@@ -1,10 +1,21 @@
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI, BackgroundTasks, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from typing import Optional
 import os
+from dotenv import load_dotenv
+from supabase import create_client, Client
+
 # Import the scanner class from your existing script
 from audit_tool import SecurityScanner 
+
+load_dotenv()
+
+# --- SUPABASE CONFIG ---
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 app = FastAPI(
     title="CyberSecure Audit API",
@@ -14,10 +25,10 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # This defines the data we expect from the frontend
@@ -29,32 +40,73 @@ def cleanup_file(path: str):
     if os.path.exists(path):
         os.remove(path)
 
+async def verify_user(token: str):
+    """Verifies the Supabase user token."""
+    try:
+        user = supabase.auth.get_user(token)
+        return user.user if user else None
+    except Exception:
+        return None
+
 @app.post("/generate-audit")
-async def generate_audit(request: ScanRequest, background_tasks: BackgroundTasks):
+async def generate_audit(
+    request: ScanRequest, 
+    background_tasks: BackgroundTasks,
+    authorization: Optional[str] = Header(None)
+):
     """
     Takes a URL, runs the scan, generates a PDF, and returns it.
+    If a valid token is provided, generates a Premium report and saves to DB.
     """
     target_url = request.url
-    
+    is_premium = False
+    user_id = None
+
+    # Check for authentication
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
+        user = await verify_user(token)
+        if user:
+            is_premium = True
+            user_id = user.id
+
     # 1. Initialize the Scanner
     scanner = SecurityScanner(target_url)
     
-    # 2. Run the checks
+    # 2. Run the checks (manually run for more control or use scanner.run)
     scanner.check_ports()
     scanner.check_ssl()
     scanner.check_security_headers()
     scanner.check_sensitive_files()
+    scanner.check_critical_exposures()
+    scanner.check_email_security()
     
-    # 3. Generate PDF (This now returns the filename)
-    pdf_filename = scanner.generate_report(is_premium=False)
+    # 3. Generate PDF 
+    pdf_filename = scanner.generate_report(is_premium=is_premium)
+    
+    # 4. Save to Supabase if the user is logged in
+    if is_premium and user_id:
+        risk_score = "F"
+        issue_count = len(scanner.issues)
+        if issue_count == 0: risk_score = "A+"
+        elif issue_count < 3: risk_score = "B"
 
-    
-    # 4. Check if file exists
+        scan_data = {
+            "user_id": user_id,
+            "hostname": scanner.hostname,
+            "risk_score": risk_score,
+            "issue_count": issue_count,
+            "pdf_url": pdf_filename, # Ideally this would be a URL to Supabase Storage
+            "created_at": "now()"
+        }
+        try:
+            supabase.table("scans").insert(scan_data).execute()
+        except Exception as e:
+            print(f"Error saving scan: {e}")
+
+    # 5. Check if file exists and return
     if os.path.exists(pdf_filename):
-        # Schedule the file to be deleted after the user downloads it
         background_tasks.add_task(cleanup_file, pdf_filename)
-        
-        # 5. Send the file back to the browser
         return FileResponse(
             path=pdf_filename, 
             filename=pdf_filename, 
@@ -63,6 +115,15 @@ async def generate_audit(request: ScanRequest, background_tasks: BackgroundTasks
     else:
         return {"error": "Failed to generate report"}
 
+@app.post("/save-scan")
+async def save_scan(data: dict):
+    """Explicitly save a scan record (optional)"""
+    try:
+        supabase.table("scans").insert(data).execute()
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 @app.get("/")
 def home():
-    return {"message": "CyberSecure API is Running. Go to /docs to test it."}
+    return {"message": "CyberSecure API with Supabase is Running."}
