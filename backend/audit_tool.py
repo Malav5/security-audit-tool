@@ -425,7 +425,6 @@ class SecurityScanner:
 
     def check_critical_exposures(self):
         print("[*] Hunting for Critical Config Leaks (.env, .git)...")
-        # These are the "Holy Grail" for hackers
         dangerous_files = {
             "/.env": "Environment File (Contains DB passwords & API Keys)",
             "/.git/HEAD": "Git Repository (Contains entire source code history)",
@@ -436,23 +435,30 @@ class SecurityScanner:
         for path, name in dangerous_files.items():
             try:
                 url = self.target_url.rstrip('/') + path
-                resp = requests.get(url, timeout=3, verify=False, headers=self.headers) # verify=False to catch even if SSL is broken
+                # explicitly follow redirects and use certifi for SSL
+                resp = requests.get(url, timeout=5, verify=certifi.where(), headers=self.headers, allow_redirects=True)
 
-                
-                # If we get a 200 OK and the content looks real
+                # WAF/Block detection to avoid false findings on block pages
+                block_phrases = ["Just a moment...", "Attention Required!", "Verify you are human"]
+                if any(phrase in resp.text for phrase in block_phrases):
+                    print(f"    [!] Skipping {path}: WAF block detected.")
+                    continue
+
+                # If we get a 200 OK and it's not a standard HTML page (usually config files aren't HTML)
                 if resp.status_code == 200:
-                    # Validate it's not a custom 404 page by checking content length or keywords
-                    if "html" not in resp.headers.get("Content-Type", ""): 
+                    content_type = resp.headers.get("Content-Type", "").lower()
+                    # 404 pages are usually HTML. Real .env files are usually text/plain or binary
+                    if "html" not in content_type: 
                         self.issues.append({
                             "title": f"CRITICAL EXPOSURE: {name} Found",
                             "severity": "HIGH",
-                            "impact": f"This file ({path}) is publicly accessible. Attackers can download it to steal passwords, API keys, or your entire codebase.",
-                            "fix": f"Immediately configure your web server (Nginx/Apache) to deny access to {path}.",
+                            "impact": f"This file ({path}) is publicly accessible. Attackers can download it to steal passwords or API keys.",
+                            "fix": f"Configure your web server (Nginx/Apache) to deny access to {path}.",
                             "compliance": ["SOC2 CC7.1", "GDPR Data Breach"],
-                            "code_snippet": f"# Nginx block file access\nlocation = {path} {{ deny all; }}"
+                            "code_snippet": f"# Nginx block\nlocation = {path} {{ deny all; }}"
                         })
-            except:
-                pass
+            except Exception as e:
+                print(f"    [!] Error checking {path}: {e}")
 
     def check_email_security(self):
         print("[*] Checking Email Security Records (SPF/DMARC)...")
