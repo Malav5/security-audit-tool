@@ -9,6 +9,7 @@ import google.generativeai as genai
 import os
 import dns.resolver
 import urllib3
+import re
 
 # Suppress InsecureRequestWarning for cleaner logs
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -218,7 +219,7 @@ class SecurityScanner:
         if self.subdomains_found:
              self.issues.append({
                 "title": f"Hidden Attack Surface Detected ({len(self.subdomains_found)} subdomains)",
-                "severity": "MEDIUM",
+                "severity": "INFO",
                 "impact": f"Attackers often target hidden subdomains like {', '.join(self.subdomains_found[:2])} because they are less secured than the main site.",
                 "fix": "Ensure all discovered subdomains have the same security policies as your main domain and are monitored for vulnerabilities.",
                 "compliance": ["SOC2 CC7.1", "GDPR Article 32"],
@@ -228,7 +229,7 @@ class SecurityScanner:
     def check_security_headers(self):
         print("[*] Checking HTTP Headers...")
         try:
-            resp = requests.get(self.target_url, timeout=5, verify=certifi.where(), headers=self.headers)
+            resp = requests.get(self.target_url, timeout=5, verify=certifi.where(), headers=self.headers, allow_redirects=True)
             
             # Soft Block Detection for Cloudflare/WAFs
             block_phrases = ["Just a moment...", "Attention Required! | Cloudflare", "Verify you are human"]
@@ -547,14 +548,16 @@ class SecurityScanner:
     def check_mixed_content(self):
         print("[*] Checking for Mixed Content (HTTP on HTTPS)...")
         try:
-            resp = requests.get(self.target_url, timeout=5, headers=self.headers)
-            if "http://" in resp.text and self.target_url.startswith("https"):
-                self.issues.append({
-                    "title": "Mixed Content Detected",
-                    "severity": "LOW",
-                    "impact": "Loading HTTP resources on an HTTPS site can allow attackers to intercept scripts or styles.",
-                    "fix": "Ensure all links, images, and scripts use https://."
-                })
+            resp = requests.get(self.target_url, timeout=5, headers=self.headers, allow_redirects=True)
+            if self.target_url.startswith("https"):
+                # Specifically check for http in src or href attributes to avoid XML namespace false positives
+                if re.search(r'(src|href)=["\']http://', resp.text):
+                    self.issues.append({
+                        "title": "Mixed Content Detected",
+                        "severity": "LOW",
+                        "impact": "Loading HTTP resources on an HTTPS site can allow attackers to intercept scripts or styles.",
+                        "fix": "Ensure all links, images, and scripts use https://."
+                    })
         except: pass
 
     def check_html_comments(self):

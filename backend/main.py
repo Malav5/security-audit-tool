@@ -4,8 +4,14 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional
 import os
+import asyncio
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+from datetime import datetime
 from dotenv import load_dotenv
 from supabase import create_client, Client
+from apscheduler.triggers.cron import CronTrigger
+import datetime
 
 # Import the scanner class from your existing script
 from audit_tool import SecurityScanner 
@@ -17,11 +23,66 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# --- AUTOMATION SCHEDULER ---
+scheduler = BackgroundScheduler()
+scheduler.start()
+
+def run_automated_scan(user_id: str, url: str, token: str):
+    """Function called by the scheduler to run a 24hr scan."""
+    print(f"[AUTO-SCAN] Starting scheduled scan for {url} (User: {user_id})")
+    scanner = SecurityScanner(url)
+    results = scanner.run(is_premium=True)
+    
+    scan_data = {
+        "user_id": user_id,
+        "hostname": scanner.hostname,
+        "risk_score": results["grade"],
+        "issue_count": len(results["issues"]),
+        "pdf_url": results["pdf_filename"],
+        "findings": results["issues"],
+        "is_automated": True
+    }
+    
+    try:
+        # Save results to DB
+        supabase.table("scans").insert(scan_data).execute()
+        print(f"[AUTO-SCAN] Completed & Saved for {url}")
+    except Exception as e:
+        print(f"[AUTO-SCAN] Error: {e}")
+
 app = FastAPI(
     title="CyberSecure Audit API",
     description="A White-Label API that generates PDF security reports.",
     version="1.0"
 )
+
+# --- SCHEDULER INITIALIZATION ---
+scheduler = BackgroundScheduler()
+scheduler.start()
+
+def run_scheduled_scan(user_id: str, url: str):
+    """Execution logic for automated scans."""
+    print(f"[AUTO-PILOT] Starting automated scan for {url} (User: {user_id})")
+    try:
+        scanner = SecurityScanner(url)
+        # Automated scans always use Premium logic since they are an enterprise feature
+        results = scanner.run(is_premium=True)
+        
+        scan_data = {
+            "user_id": user_id,
+            "hostname": scanner.hostname,
+            "risk_score": results["grade"],
+            "issue_count": len(results["issues"]),
+            "pdf_url": results["pdf_filename"],
+            "findings": results["issues"],
+            "created_at": datetime.datetime.now().isoformat()
+        }
+        # In a real app we'd need a service key to bypass RLS for background jobs
+        # For now, we interact with the DB directly
+        supabase.table("scans").insert(scan_data).execute()
+        print(f"[AUTO-PILOT] Completed scan for {url}. Result saved.")
+    except Exception as e:
+        print(f"[AUTO-PILOT] ERROR: Failed automated scan for {url}: {e}")
 
 app.add_middleware(
     CORSMiddleware,
@@ -69,6 +130,7 @@ async def generate_audit(
         if user:
             is_premium = True
             user_id = user.id
+            print(f"DEBUG: Authenticated user detected: {user_id}")
 
     # 1. Initialize the Scanner
     scanner = SecurityScanner(target_url)
@@ -91,9 +153,17 @@ async def generate_audit(
             "findings": results["issues"] # Save the full research for the portal
         }
         try:
+            # Use the authenticated client to bypass RLS properly
             supabase.postgrest.auth(token).table("scans").insert(scan_data).execute()
+            print(f"SUCCESS: Scan saved for {scanner.hostname}")
         except Exception as e:
             print(f"CRITICAL: Error saving scan to Supabase: {e}")
+            # Fallback for local testing if token auth fails
+            try:
+                supabase.table("scans").insert(scan_data).execute()
+                print("FALLBACK SUCCESS: Saved without token header")
+            except Exception as e2:
+                print(f"ULTIMATE FAILURE: {e2}")
 
     return results
 
@@ -126,6 +196,39 @@ async def delete_scan(scan_id: str, authorization: Optional[str] = Header(None))
         return {"status": "success", "message": "Scan deleted successfully"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/toggle-automation")
+async def toggle_automation(data: dict, authorization: Optional[str] = Header(None)):
+    """Enables/Disables 24hr automated scanning for a host."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    token = authorization.split(" ")[1]
+    user = await verify_user(token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid Session")
+
+    hostname = data.get("hostname")
+    enable = data.get("enable", True)
+    job_id = f"auto_{user.id}_{hostname}"
+
+    if enable:
+        # Add job to run every 24 hours
+        scheduler.add_job(
+            run_automated_scan,
+            trigger=IntervalTrigger(hours=24),
+            args=[str(user.id), hostname, token],
+            id=job_id,
+            replace_existing=True
+        )
+        msg = f"Automation enabled for {hostname}"
+    else:
+        # Remove job
+        if scheduler.get_job(job_id):
+            scheduler.remove_job(job_id)
+        msg = f"Automation disabled for {hostname}"
+
+    return {"status": "success", "message": msg, "is_automated": enable}
 
 @app.get("/")
 def home():

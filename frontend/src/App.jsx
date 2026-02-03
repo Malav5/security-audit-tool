@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import {
   Shield, Lock, Download, AlertCircle, CheckCircle,
   Activity, Globe, Server, FileText, LayoutDashboard,
-  LogOut, User, Mail, Loader2, ArrowLeft, History, ExternalLink, Trash2
+  LogOut, User, Mail, Loader2, ArrowLeft, History, ExternalLink, Trash2, Clock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { generateAudit, downloadPDF, deleteScan } from './api';
+import { generateAudit, downloadPDF, deleteScan, toggleAutomation } from './api';
 import { supabase } from './supabaseClient';
 
 function App() {
@@ -16,6 +16,8 @@ function App() {
   const [success, setSuccess] = useState(false);
   const [scanResults, setScanResults] = useState(null);
   const [revealedFixes, setRevealedFixes] = useState({});
+  const [automatedHosts, setAutomatedHosts] = useState({});
+  const [automationLoading, setAutomationLoading] = useState(false);
 
   // Auth State
   const [session, setSession] = useState(null);
@@ -215,6 +217,27 @@ function App() {
       setUserScans(prev => prev.filter(s => s.id !== scanId));
     } catch (err) {
       alert(err.message);
+    }
+  };
+
+  const handleToggleAutomation = async (e, hostname) => {
+    e.stopPropagation();
+    if (!session) {
+      setShowAuth(true);
+      return;
+    }
+
+    const currentState = automatedHosts[hostname] || false;
+    const newState = !currentState;
+
+    setAutomationLoading(true);
+    try {
+      await toggleAutomation(hostname, newState, session.access_token);
+      setAutomatedHosts(prev => ({ ...prev, [hostname]: newState }));
+    } catch (err) {
+      alert(err.message + ". Make sure your local backend is running!");
+    } finally {
+      setAutomationLoading(false);
     }
   };
 
@@ -428,6 +451,21 @@ function App() {
                 </div>
 
                 <div className="flex gap-4 w-full md:w-auto">
+                  <button
+                    onClick={(e) => handleToggleAutomation(e, scanResults.hostname)}
+                    disabled={automationLoading}
+                    className={`flex-grow md:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-xl border font-bold transition disabled:opacity-50 ${automatedHosts[scanResults.hostname]
+                        ? 'bg-emerald-500/10 border-emerald-500 text-emerald-500'
+                        : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+                      }`}
+                  >
+                    {automationLoading ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <Clock className={`w-5 h-5 ${automatedHosts[scanResults.hostname] ? 'animate-pulse' : ''}`} />
+                    )}
+                    {automationLoading ? 'Processing...' : automatedHosts[scanResults.hostname] ? '24hr Auto-Scan Active' : 'Enable 24hr Auto-Scan'}
+                  </button>
                   <button
                     onClick={() => handleDownloadReport(scanResults.pdf_filename)}
                     className="flex-grow md:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-cyan-500 text-black font-bold hover:bg-cyan-400 transition shadow-lg shadow-cyan-500/10"

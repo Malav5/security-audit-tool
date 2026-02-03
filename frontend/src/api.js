@@ -1,7 +1,7 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:8000'; // FOR LOCAL TESTING
-// const API_BASE_URL = 'https://security-audit-tool-1.onrender.com';
+const API_BASE_URL = 'https://security-audit-tool-1.onrender.com';
+// const API_BASE_URL = 'http://localhost:8000'; // USE THIS FOR LOCAL TESTING
 
 const api = axios.create({
     baseURL: API_BASE_URL,
@@ -47,5 +47,15 @@ export const deleteScan = async (scanId, token) => {
         return response.data;
     } catch (error) {
         throw new Error(error.response?.data?.detail || "Failed to delete scan.");
+    }
+};
+export const toggleAutomation = async (hostname, enable, token) => {
+    try {
+        const response = await api.post('/toggle-automation', { hostname, enable }, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        return response.data;
+    } catch (error) {
+        throw new Error(error.response?.data?.detail || "Failed to toggle automation.");
     }
 };
