@@ -92,17 +92,18 @@ async def generate_audit(
         elif issue_count < 3: risk_score = "B"
 
         scan_data = {
-            "user_id": user_id,
+            "user_id": str(user_id),
             "hostname": scanner.hostname,
             "risk_score": risk_score,
             "issue_count": issue_count,
-            "pdf_url": pdf_filename, # Ideally this would be a URL to Supabase Storage
-            "created_at": "now()"
+            "pdf_url": pdf_filename
         }
         try:
-            supabase.table("scans").insert(scan_data).execute()
+            result = supabase.table("scans").insert(scan_data).execute()
+            print(f"Scan saved successfully: {result}")
         except Exception as e:
-            print(f"Error saving scan: {e}")
+            print(f"CRITICAL: Error saving scan to Supabase: {e}")
+
 
     # 5. Check if file exists and return
     if os.path.exists(pdf_filename):

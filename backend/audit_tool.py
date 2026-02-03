@@ -200,12 +200,18 @@ class SecurityScanner:
             # 3. Server Leak
             if "Server" in headers or "X-Powered-By" in headers:
                 leaked = headers.get('Server', '') + " " + headers.get('X-Powered-By', '')
-                self.issues.append({
-                    "title": f"Server Information Disclosure: {leaked.strip()}",
-                    "severity": "LOW",
-                    "impact": "Revealing exact software versions helps hackers select specific exploits for your server.",
-                    "fix": "Configure your server (Nginx/Apache) to hide the 'Server' and 'X-Powered-By' headers."
-                })
+                leaked = leaked.strip()
+                # Only flag as a security risk if it contains version numbers (digits)
+                # Generic names like 'cloudflare', 'nginx', 'GitHub.com' are ignored
+                import re
+                if re.search(r'\d', leaked):
+                    self.issues.append({
+                        "title": f"Server Version Disclosure: {leaked}",
+                        "severity": "LOW",
+                        "impact": "Revealing exact software versions helps hackers select specific exploits for your server.",
+                        "fix": "Configure your server to hide the version numbers in headers (e.g., 'ServerTokens Prod' in Apache)."
+                    })
+
 
             # 4. Cookie Security
             if "Set-Cookie" in headers:
@@ -271,19 +277,31 @@ class SecurityScanner:
         pdf.set_font('Arial', '', 10)
         pdf.cell(0, 6, f"Scan Date: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}", 0, 1)
         
-        # Score Logic
-        risk_count = len(self.issues)
+        # Weighted Scoring Logic
+        total_risk_points = 0
+        for issue in self.issues:
+            if issue['severity'] == "HIGH": total_risk_points += 40
+            elif issue['severity'] == "MEDIUM": total_risk_points += 15
+            else: total_risk_points += 5
+
+        score = max(0, 100 - total_risk_points)
+        
         pdf.set_xy(150, pdf.get_y() - 12)
         pdf.set_font('Arial', 'B', 24)
-        if risk_count == 0:
+        
+        if score >= 95:
             pdf.set_text_color(*COLOR_SAFE)
             pdf.cell(40, 10, "A+", 0, 1, 'C')
-        elif risk_count < 3:
+        elif score >= 75:
             pdf.set_text_color(*COLOR_MEDIUM_RISK)
             pdf.cell(40, 10, "B", 0, 1, 'C')
+        elif score >= 50:
+            pdf.set_text_color(*COLOR_MEDIUM_RISK)
+            pdf.cell(40, 10, "C", 0, 1, 'C')
         else:
             pdf.set_text_color(*COLOR_HIGH_RISK)
             pdf.cell(40, 10, "F", 0, 1, 'C')
+
             
         pdf.ln(20)
 
