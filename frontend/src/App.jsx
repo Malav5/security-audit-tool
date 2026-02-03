@@ -450,13 +450,13 @@ function App() {
                   </div>
                 </div>
 
-                <div className="flex gap-4 w-full md:w-auto">
+                <div className="flex flex-wrap gap-4 w-full md:w-auto justify-start md:justify-end">
                   <button
                     onClick={(e) => handleToggleAutomation(e, scanResults.hostname)}
                     disabled={automationLoading}
                     className={`flex-grow md:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-xl border font-bold transition disabled:opacity-50 ${automatedHosts[scanResults.hostname]
-                        ? 'bg-emerald-500/10 border-emerald-500 text-emerald-500'
-                        : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+                      ? 'bg-emerald-500/10 border-emerald-500 text-emerald-500'
+                      : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
                       }`}
                   >
                     {automationLoading ? (
@@ -530,38 +530,62 @@ function App() {
                       <div className="grid md:grid-cols-2 gap-6">
                         <div className="space-y-2">
                           <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Threat Impact</label>
-                          <p className="text-slate-300 text-sm leading-relaxed">{issue.impact}</p>
+                          {session ? (
+                            <p className="text-slate-300 text-sm leading-relaxed">{issue.impact}</p>
+                          ) : (
+                            <div className="flex items-center gap-2 p-3 rounded-lg bg-slate-800/50 border border-slate-700/50 text-slate-500 text-xs italic">
+                              <Lock className="w-3 h-3" /> Sign in to analyze impact vector
+                            </div>
+                          )}
                         </div>
                         <div className="space-y-4">
                           <div className="space-y-2">
                             <label className="text-[10px] uppercase tracking-widest text-cyan-500 font-bold">Remediation Guide</label>
-                            <p className="text-slate-300 text-sm">{issue.fix}</p>
+                            {session ? (
+                              <p className="text-slate-300 text-sm">{issue.fix}</p>
+                            ) : (
+                              <div className="flex items-center gap-2 p-3 rounded-lg bg-cyan-500/5 border border-cyan-500/10 text-cyan-500/50 text-xs italic">
+                                <Lock className="w-3 h-3" /> Sign in for step-by-step fix
+                              </div>
+                            )}
                           </div>
 
                           {issue.code_snippet && (
                             <div className="space-y-3">
-                              <button
-                                onClick={() => toggleFix(idx)}
-                                className="flex items-center gap-2 text-xs font-bold text-cyan-400 border border-cyan-400/20 bg-cyan-400/5 hover:bg-cyan-400/10 px-4 py-2 rounded-lg transition"
-                              >
-                                {revealedFixes[idx] ? 'Hide Hotfix' : 'Reveal Technical Hotfix'}
-                                <ExternalLink className="w-3 h-3" />
-                              </button>
-
-                              <AnimatePresence>
-                                {revealedFixes[idx] && (
-                                  <motion.div
-                                    initial={{ height: 0, opacity: 0 }}
-                                    animate={{ height: 'auto', opacity: 1 }}
-                                    exit={{ height: 0, opacity: 0 }}
-                                    className="overflow-hidden"
+                              {session ? (
+                                <>
+                                  <button
+                                    onClick={() => toggleFix(idx)}
+                                    className="flex items-center gap-2 text-xs font-bold text-cyan-400 border border-cyan-400/20 bg-cyan-400/5 hover:bg-cyan-400/10 px-4 py-2 rounded-lg transition"
                                   >
-                                    <pre className="bg-black/40 border border-slate-800 rounded-xl p-4 text-[10px] font-mono text-cyan-100/80 leading-relaxed overflow-x-auto">
-                                      {issue.code_snippet}
-                                    </pre>
-                                  </motion.div>
-                                )}
-                              </AnimatePresence>
+                                    {revealedFixes[idx] ? 'Hide Hotfix' : 'Reveal Technical Hotfix'}
+                                    <ExternalLink className="w-3 h-3" />
+                                  </button>
+
+                                  <AnimatePresence>
+                                    {revealedFixes[idx] && (
+                                      <motion.div
+                                        initial={{ height: 0, opacity: 0 }}
+                                        animate={{ height: 'auto', opacity: 1 }}
+                                        exit={{ height: 0, opacity: 0 }}
+                                        className="overflow-hidden"
+                                      >
+                                        <pre className="bg-black/40 border border-slate-800 rounded-xl p-4 text-[10px] font-mono text-cyan-100/80 leading-relaxed overflow-x-auto">
+                                          {issue.code_snippet}
+                                        </pre>
+                                      </motion.div>
+                                    )}
+                                  </AnimatePresence>
+                                </>
+                              ) : (
+                                <button
+                                  onClick={() => setShowAuth(true)}
+                                  className="flex items-center gap-2 text-[10px] font-bold text-slate-500 border border-dashed border-slate-700 bg-slate-900/50 px-4 py-2 rounded-lg hover:border-cyan-500/50 hover:text-cyan-400 transition group"
+                                >
+                                  <Lock className="w-3 h-3 group-hover:scale-110 transition" />
+                                  Login to view Nginx/Apache Hotfix
+                                </button>
+                              )}
                             </div>
                           )}
                         </div>
