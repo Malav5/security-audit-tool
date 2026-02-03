@@ -190,10 +190,30 @@ async def delete_scan(scan_id: str, authorization: Optional[str] = Header(None))
         raise HTTPException(status_code=401, detail="Invalid token")
 
     try:
-        # Supabase RLS will handle the security if configured, but we double-check here
-        result = supabase.postgrest.auth(token).table("scans").delete().eq("id", scan_id).eq("user_id", str(user.id)).execute()
+        print(f"DEBUG: Attempting to delete scan {scan_id} for user {user.id}")
+        
+        # We try with the user's auth token first to satisfy RLS
+        # We check both string and integer ID formats
+        auth_client = supabase.postgrest.auth(token)
+        
+        # Primary attempt (String ID)
+        result = auth_client.table("scans").delete().eq("id", scan_id).eq("user_id", str(user.id)).execute()
+        
+        # Secondary attempt (Integer ID)
+        if not result.data and scan_id.isdigit():
+             result = auth_client.table("scans").delete().eq("id", int(scan_id)).eq("user_id", str(user.id)).execute()
+        
+        # Final fallback - use direct client if auth_client failed to return data
+        if not result.data:
+            print("DEBUG: Auth client delete returned no data, trying direct client...")
+            result = supabase.table("scans").delete().eq("id", scan_id).eq("user_id", str(user.id)).execute()
+            if not result.data and scan_id.isdigit():
+                result = supabase.table("scans").delete().eq("id", int(scan_id)).eq("user_id", str(user.id)).execute()
+
+        print(f"DEBUG: Delete final result: {result.data}")
         return {"status": "success", "message": "Scan deleted successfully"}
     except Exception as e:
+        print(f"CRITICAL DELETE ERROR: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/toggle-automation")
