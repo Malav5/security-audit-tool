@@ -365,9 +365,15 @@ class SecurityScanner:
             import dns.resolver
             domain = self.hostname
             
-            # 1. Check SPF (Sender Policy Framework)
+            # --- FORCE GOOGLE DNS (The Fix) ---
+            resolver = dns.resolver.Resolver()
+            resolver.nameservers = ['8.8.8.8', '1.1.1.1'] 
+            # ----------------------------------
+
+            # 1. Check SPF
             try:
-                answers = dns.resolver.resolve(domain, 'TXT')
+                # Use 'resolver.resolve' instead of 'dns.resolver.resolve'
+                answers = resolver.resolve(domain, 'TXT')
                 spf_found = False
                 for rdata in answers:
                     if "v=spf1" in rdata.to_text():
@@ -380,8 +386,8 @@ class SecurityScanner:
                         "impact": "You have not authorized any servers to send email for you. Hackers can easily spoof your domain to send phishing emails.",
                         "fix": "Add a TXT record for 'v=spf1' listing your authorized email servers."
                     })
-            except:
-                # If no TXT records at all
+            except Exception:
+                # If lookup fails, assume missing for now (or could be strict timeout)
                 self.issues.append({
                     "title": "Missing SPF Record (Email Security)",
                     "severity": "MEDIUM",
@@ -389,21 +395,21 @@ class SecurityScanner:
                     "fix": "Create an SPF TXT record."
                 })
 
-            # 2. Check DMARC (Domain-based Message Authentication)
+            # 2. Check DMARC
             try:
                 dmarc_domain = f"_dmarc.{domain}"
-                dns.resolver.resolve(dmarc_domain, 'TXT')
-                # If this passes, DMARC exists. Good.
-            except:
+                resolver.resolve(dmarc_domain, 'TXT')
+                # If found, do nothing (Good)
+            except Exception:
                 self.issues.append({
                     "title": "Missing DMARC Record",
                     "severity": "LOW",
-                    "impact": "DMARC tells email providers (Gmail/Outlook) what to do if an email fails the SPF check. Without it, spoofed emails might still land in inboxes.",
-                    "fix": "Add a TXT record for '_dmarc' to enforce a policy (e.g., 'v=DMARC1; p=none')."
+                    "impact": "DMARC tells email providers what to do if an email fails SPF checks.",
+                    "fix": "Add a TXT record for '_dmarc'."
                 })
 
         except ImportError:
-            print("Error: dnspython library not installed. Skipping email check.")
+            print("Error: dnspython library not installed.")
         except Exception as e:
             print(f"DNS Check failed: {e}")
 
