@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import {
   Shield, Lock, Download, AlertCircle, CheckCircle,
   Activity, Globe, Server, FileText, LayoutDashboard,
-  LogOut, User, Mail, Loader2, ArrowLeft, History, ExternalLink
+  LogOut, User, Mail, Loader2, ArrowLeft, History, ExternalLink, Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { generateAudit, downloadPDF } from './api';
+import { generateAudit, downloadPDF, deleteScan } from './api';
 import { supabase } from './supabaseClient';
 
 function App() {
@@ -202,6 +202,20 @@ function App() {
       ...prev,
       [index]: !prev[index]
     }));
+  };
+
+  const handleDeleteScan = async (e, scanId) => {
+    e.stopPropagation(); // Don't open the report when clicking delete
+
+    if (!window.confirm("Are you sure you want to delete this scan record?")) return;
+
+    try {
+      await deleteScan(scanId, session.access_token);
+      // Update local state to remove the scan
+      setUserScans(prev => prev.filter(s => s.id !== scanId));
+    } catch (err) {
+      alert(err.message);
+    }
   };
 
   return (
@@ -583,6 +597,13 @@ function App() {
                           className="flex items-center gap-2 px-6 py-2 rounded-xl bg-cyan-500 text-black text-sm font-bold hover:bg-cyan-400 transition shadow-lg shadow-cyan-500/10"
                         >
                           <Download className="w-4 h-4" /> Download PDF
+                        </button>
+                        <button
+                          onClick={(e) => handleDeleteScan(e, scan.id)}
+                          className="p-2 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all group-hover:opacity-100"
+                          title="Delete Scan"
+                        >
+                          <Trash2 className="w-5 h-5" />
                         </button>
                       </div>
                     </div>

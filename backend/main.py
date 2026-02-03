@@ -109,12 +109,21 @@ async def download_pdf(filename: str, background_tasks: BackgroundTasks):
         )
     raise HTTPException(status_code=404, detail="File not found or already deleted.")
 
-@app.post("/save-scan")
-async def save_scan(data: dict):
-    """Explicitly save a scan record (optional)"""
+@app.delete("/delete-scan/{scan_id}")
+async def delete_scan(scan_id: str, authorization: Optional[str] = Header(None)):
+    """Deletes a specific scan record if it belongs to the authenticated user."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid token")
+    
+    token = authorization.split(" ")[1]
+    user = await verify_user(token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
     try:
-        supabase.table("scans").insert(data).execute()
-        return {"status": "success"}
+        # Supabase RLS will handle the security if configured, but we double-check here
+        result = supabase.postgrest.auth(token).table("scans").delete().eq("id", scan_id).eq("user_id", str(user.id)).execute()
+        return {"status": "success", "message": "Scan deleted successfully"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
