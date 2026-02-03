@@ -1,17 +1,16 @@
+import os
+import asyncio
+from datetime import datetime
+from typing import Optional
+from dotenv import load_dotenv
+
 from fastapi import FastAPI, BackgroundTasks, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import Optional
-import os
-import asyncio
+from supabase import create_client, Client
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from datetime import datetime
-from dotenv import load_dotenv
-from supabase import create_client, Client
-from apscheduler.triggers.cron import CronTrigger
-import datetime
 
 # Import the scanner class from your existing script
 from audit_tool import SecurityScanner 
