@@ -12,7 +12,6 @@ const api = axios.create({
 export const generateAudit = async (url, token = null) => {
     try {
         const config = {
-            responseType: 'blob',
             headers: {}
         };
 
@@ -23,13 +22,18 @@ export const generateAudit = async (url, token = null) => {
         const response = await api.post('/generate-audit', { url }, config);
         return response.data;
     } catch (error) {
-        if (error.response) {
-            throw new Error(error.response.data.detail || 'Audit generation failed');
-        } else if (error.request) {
-            throw new Error('No response from server. Is the backend running?');
-        } else {
-            throw new Error(error.message);
-        }
+        throw new Error(error.response?.data?.detail || error.message);
+    }
+};
+
+export const downloadPDF = async (filename) => {
+    try {
+        const response = await api.get(`/download-pdf/${filename}`, {
+            responseType: 'blob'
+        });
+        return response.data;
+    } catch (error) {
+        throw new Error("Failed to download report. It may have expired.");
     }
 };
 

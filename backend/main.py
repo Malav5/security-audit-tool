@@ -55,12 +55,12 @@ async def generate_audit(
     authorization: Optional[str] = Header(None)
 ):
     """
-    Takes a URL, runs the scan, generates a PDF, and returns it.
-    If a valid token is provided, generates a Premium report and saves to DB.
+    Takes a URL, runs the scan, returns JSON results and a pdf link.
     """
     target_url = request.url
     is_premium = False
     user_id = None
+    token = None
 
     # Check for authentication
     if authorization and authorization.startswith("Bearer "):
@@ -73,13 +73,14 @@ async def generate_audit(
     # 1. Initialize the Scanner
     scanner = SecurityScanner(target_url)
     
-    # 2. Run all checks and generate the report
-    pdf_filename = scanner.run(is_premium=is_premium)
+    # 2. Run all checks
+    results = scanner.run(is_premium=is_premium)
+    pdf_filename = results["pdf_filename"]
     
     # 3. Save to Supabase if the user is logged in
     if is_premium and user_id:
-        risk_score = scanner.get_risk_score()
-        issue_count = len(scanner.issues)
+        risk_score = results["grade"]
+        issue_count = len(results["issues"])
 
         scan_data = {
             "user_id": str(user_id),
@@ -89,24 +90,23 @@ async def generate_audit(
             "pdf_url": pdf_filename
         }
         try:
-            # We use the user's token to satisfy Supabase RLS policies
-            result = supabase.postgrest.auth(token).table("scans").insert(scan_data).execute()
-            print(f"Scan saved successfully: {result}")
+            supabase.postgrest.auth(token).table("scans").insert(scan_data).execute()
         except Exception as e:
             print(f"CRITICAL: Error saving scan to Supabase: {e}")
 
+    return results
 
-
-    # 5. Check if file exists and return
-    if os.path.exists(pdf_filename):
-        background_tasks.add_task(cleanup_file, pdf_filename)
+@app.get("/download-pdf/{filename}")
+async def download_pdf(filename: str, background_tasks: BackgroundTasks):
+    """Returns the generated PDF file."""
+    if os.path.exists(filename):
+        background_tasks.add_task(cleanup_file, filename)
         return FileResponse(
-            path=pdf_filename, 
-            filename=pdf_filename, 
+            path=filename, 
+            filename=filename, 
             media_type='application/pdf'
         )
-    else:
-        return {"error": "Failed to generate report"}
+    raise HTTPException(status_code=404, detail="File not found or already deleted.")
 
 @app.post("/save-scan")
 async def save_scan(data: dict):

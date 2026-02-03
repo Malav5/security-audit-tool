@@ -5,7 +5,7 @@ import {
   LogOut, User, Mail, Loader2, ArrowLeft, History, ExternalLink
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { generateAudit } from './api';
+import { generateAudit, downloadPDF } from './api';
 import { supabase } from './supabaseClient';
 
 function App() {
@@ -14,6 +14,8 @@ function App() {
   const [loadingStep, setLoadingStep] = useState(0);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [scanResults, setScanResults] = useState(null);
+  const [revealedFixes, setRevealedFixes] = useState({});
 
   // Auth State
   const [session, setSession] = useState(null);
@@ -31,13 +33,14 @@ function App() {
   const [scansLoading, setScansLoading] = useState(false);
 
   const loadingMessages = [
-    "Initializing CyberSecure Scanner...",
-    "Resolving Hostname...",
-    "Scanning Open Ports...",
-    "Analyzing SSL/TLS Handshake...",
-    "Checking HTTP Headers...",
-    "Running Vulnerability Heuristics...",
-    "Compiling Audit Report..."
+    "Initializing CyberSecure Enterprise Scanner...",
+    "Scanning Attack Surface (Subdomains)...",
+    "Resolving Hostname Heuristics...",
+    "Scanning Critical Infrastructure Ports...",
+    "Analyzing SSL/TLS Handshake Integrity...",
+    "Checking Enterprise HTTP Security Headers...",
+    "Mapping Vulnerabilities to GDPR/SOC2 Compliance...",
+    "Generating Premium Remediation Guide..."
   ];
 
   useEffect(() => {
@@ -145,29 +148,49 @@ function App() {
     setIsLoading(true);
     setError('');
     setSuccess(false);
+    setScanResults(null);
+    setRevealedFixes({});
 
     try {
       const token = session?.access_token;
-      const blob = await generateAudit(url, token);
+      const data = await generateAudit(url, token);
 
-      // trigger download
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = downloadUrl;
-      const hostname = url.replace(/^(?:https?:\/\/)?(?:www\.)?/i, "").split('/')[0];
-      const filename = `Audit_Report_${hostname}.pdf`;
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      link.parentNode.removeChild(link);
-
+      setScanResults(data);
       setSuccess(true);
-      if (session) fetchUserScans(); // Refresh dashboard data
+      setView('results');
+      if (session) fetchUserScans();
     } catch (err) {
       setError(err.message);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleDownloadReport = async (filename) => {
+    if (!session) {
+      setShowAuth(true);
+      return;
+    }
+
+    try {
+      const blob = await downloadPDF(filename);
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const toggleFix = (index) => {
+    setRevealedFixes(prev => ({
+      ...prev,
+      [index]: !prev[index]
+    }));
   };
 
   return (
@@ -236,10 +259,11 @@ function App() {
                   System Online & Ready
                 </div>
                 <h1 className="text-5xl md:text-7xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-cyan-100 to-cyan-400 pb-2">
-                  Enterprise-Grade <br /> Security Audit
+                  Enterprise Security <br /> & Compliance Audit
                 </h1>
                 <p className="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto">
-                  Identify vulnerabilities instantly. Log in to unlock full remediation guides and detailed impact analysis.
+                  Scan for vulnerabilities and instantly map them to <span className="text-cyan-400 font-semibold">GDPR, SOC2, and ISO 27001</span> standards.
+                  Identify hidden subdomains and receive auto-pilot remediation code.
                 </p>
               </div>
 
@@ -271,7 +295,7 @@ function App() {
                     ) : (
                       <>
                         <Activity className="w-5 h-5" />
-                        <span>Run {session ? 'Premium' : 'Free'} Scan</span>
+                        <span>Run {session ? 'Enterprise Compliance' : 'Free Security'} Scan</span>
                       </>
                     )}
                   </button>
@@ -332,6 +356,139 @@ function App() {
                     </motion.div>
                   )}
                 </AnimatePresence>
+              </div>
+            </motion.div>
+          )}
+
+          {view === 'results' && scanResults && (
+            <motion.div
+              key="results"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full space-y-8"
+            >
+              {/* Results Header */}
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-slate-900/40 border border-slate-800 p-8 rounded-2xl backdrop-blur-md">
+                <div className="flex items-center gap-6">
+                  <div className={`w-20 h-20 rounded-2xl flex items-center justify-center text-4xl font-black shadow-2xl ${scanResults.grade === 'A' ? 'bg-emerald-500 text-black shadow-emerald-500/20' :
+                      scanResults.grade === 'F' ? 'bg-red-500 text-white shadow-red-500/20' :
+                        'bg-orange-500 text-black shadow-orange-500/20'
+                    }`}>
+                    {scanResults.grade}
+                  </div>
+                  <div>
+                    <h2 className="text-3xl font-bold">{scanResults.hostname}</h2>
+                    <p className="text-slate-400 font-mono tracking-tighter uppercase text-sm mt-1">
+                      Enterprise Compliance Score: {scanResults.grade === 'A' ? 'Excellent' : scanResults.grade === 'F' ? 'Critical Action Required' : 'Manual Review Recommended'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-4 w-full md:w-auto">
+                  <button
+                    onClick={() => handleDownloadReport(scanResults.pdf_filename)}
+                    className="flex-grow md:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-cyan-500 text-black font-bold hover:bg-cyan-400 transition shadow-lg shadow-cyan-500/10"
+                  >
+                    <Download className="w-5 h-5" />
+                    {session ? 'Download Full PDF' : 'Sign in to Download PDF'}
+                  </button>
+                  <button
+                    onClick={() => setView('home')}
+                    className="flex-grow md:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-slate-800 text-white font-bold hover:bg-slate-700 transition"
+                  >
+                    <ArrowLeft className="w-5 h-5" />
+                    New Scan
+                  </button>
+                </div>
+              </div>
+
+              {/* Findings grid */}
+              <div className="grid grid-cols-1 gap-6">
+                <div className="flex items-center justify-between px-2">
+                  <h3 className="text-xl font-bold flex items-center gap-2">
+                    <Activity className="w-5 h-5 text-cyan-400" />
+                    Detailed Security Artifacts ({scanResults.issues.length})
+                  </h3>
+                  {!session && (
+                    <div className="text-xs bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-3 py-1 rounded-full flex items-center gap-2">
+                      <Lock className="w-3 h-3" /> Sample Results Visualization
+                    </div>
+                  )}
+                </div>
+
+                {scanResults.issues.map((issue, idx) => (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.05 }}
+                    key={idx}
+                    className="bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden group"
+                  >
+                    <div className="p-6">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="space-y-1">
+                          <h4 className="text-lg font-bold group-hover:text-cyan-400 transition">{issue.title}</h4>
+                          {issue.compliance && (
+                            <div className="flex gap-2">
+                              {issue.compliance.map(tag => (
+                                <span key={tag} className="text-[10px] font-mono bg-slate-800 text-slate-400 px-2 py-0.5 rounded border border-slate-700">
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-black tracking-widest uppercase ${issue.severity === 'HIGH' ? 'bg-red-500/10 text-red-500 border border-red-500/20' :
+                            issue.severity === 'MEDIUM' ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20' :
+                              'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                          }`}>
+                          {issue.severity}
+                        </span>
+                      </div>
+
+                      <div className="grid md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Threat Impact</label>
+                          <p className="text-slate-300 text-sm leading-relaxed">{issue.impact}</p>
+                        </div>
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <label className="text-[10px] uppercase tracking-widest text-cyan-500 font-bold">Remediation Guide</label>
+                            <p className="text-slate-300 text-sm">{issue.fix}</p>
+                          </div>
+
+                          {issue.code_snippet && (
+                            <div className="space-y-3">
+                              <button
+                                onClick={() => toggleFix(idx)}
+                                className="flex items-center gap-2 text-xs font-bold text-cyan-400 border border-cyan-400/20 bg-cyan-400/5 hover:bg-cyan-400/10 px-4 py-2 rounded-lg transition"
+                              >
+                                {revealedFixes[idx] ? 'Hide Hotfix' : 'Reveal Technical Hotfix'}
+                                <ExternalLink className="w-3 h-3" />
+                              </button>
+
+                              <AnimatePresence>
+                                {revealedFixes[idx] && (
+                                  <motion.div
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: 'auto', opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    className="overflow-hidden"
+                                  >
+                                    <pre className="bg-black/40 border border-slate-800 rounded-xl p-4 text-[10px] font-mono text-cyan-100/80 leading-relaxed overflow-x-auto">
+                                      {issue.code_snippet}
+                                    </pre>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
               </div>
             </motion.div>
           )}

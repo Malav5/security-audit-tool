@@ -81,7 +81,7 @@ class AdvancedPDF(FPDF):
         self.rect(10, self.get_y(), 190, 1, 'F')
         self.ln(5)
 
-    def add_issue_block(self, title, impact, fix, severity="HIGH"):
+    def add_issue_block(self, title, impact, fix, severity="HIGH", compliance=None, code_snippet=None):
         is_premium = getattr(self, 'is_premium', True)
 
         # Select Color based on severity
@@ -109,6 +109,14 @@ class AdvancedPDF(FPDF):
         self.set_font('Arial', 'B', 11)
         self.cell(0, 10, title, 0, 1)
 
+        # Compliance Tags (Premium ONLY)
+        if compliance and is_premium:
+            self.set_x(35)
+            self.set_font('Arial', 'I', 8)
+            self.set_text_color(100, 100, 100)
+            tags = " | ".join([f"[{c}]" for c in compliance])
+            self.cell(0, 5, f"Compliance: {tags}", 0, 1)
+
         # Impact Section
         self.set_x(10)
         self.set_text_color(*COLOR_TEXT_MAIN)
@@ -119,11 +127,9 @@ class AdvancedPDF(FPDF):
         if is_premium:
             self.multi_cell(0, 6, impact)
         else:
-            # Masked text effect
             self.set_text_color(150, 150, 150)
-            self.multi_cell(0, 6, "[LOCKED] Upgrade to Premium to unlock this detailed impact analysis.")
+            self.multi_cell(0, 6, "[LOCKED] Upgrade to Premium for detailed impact analysis.")
             self.set_text_color(*COLOR_TEXT_MAIN)
-
 
         # Fix Section
         self.set_x(10)
@@ -135,13 +141,20 @@ class AdvancedPDF(FPDF):
         if is_premium:
             self.set_text_color(50, 50, 50)
             self.multi_cell(0, 6, fix)
+            
+            # Code Snippet (Hotfix)
+            if code_snippet:
+                self.ln(2)
+                self.set_x(15)
+                self.set_fill_color(245, 245, 245)
+                self.set_font('Courier', '', 8)
+                self.multi_cell(180, 5, code_snippet, fill=True)
+                self.ln(2)
         else:
-            # Placeholder for free users
             self.set_text_color(150, 150, 150)
-            self.multi_cell(0, 6, "[LOCKED] Upgrade to Premium to unlock this detailed fix.")
+            self.multi_cell(0, 6, "[LOCKED] Upgrade for step-by-step code fixes.")
             self.set_text_color(50, 50, 50)
 
-        
         self.ln(3) # Spacer
 
 
@@ -178,14 +191,57 @@ class SecurityScanner:
                     "title": f"Open Port Detected: {port} ({name})",
                     "severity": "HIGH",
                     "impact": "Exposed ports can allow hackers to brute-force passwords or exploit service vulnerabilities directly.",
-                    "fix": f"Close port {port} on your firewall if not absolutely necessary. Use VPNs for remote access."
+                    "fix": f"Close port {port} on your firewall if not absolutely necessary. Use VPNs for remote access.",
+                    "compliance": ["ISO 27001", "SOC2 Control CC6.1"],
+                    "code_snippet": f"# Block port {port} on UFW\nsudo ufw deny {port}"
                 })
             sock.close()
+
+    def discover_subdomains(self):
+        print("[*] Performing Attack Surface Discovery (Subdomains)...")
+        subdomains = ["api", "dev", "staging", "test", "vpn", "cloud", "mail", "admin", "beta", "portal"]
+        self.subdomains_found = []
+        
+        resolver = dns.resolver.Resolver()
+        resolver.nameservers = ['8.8.8.8', '1.1.1.1']
+        resolver.lifetime = 1.0
+
+        for sub in subdomains:
+            try:
+                target = f"{sub}.{self.hostname}"
+                resolver.resolve(target, 'A')
+                self.subdomains_found.append(target)
+                print(f"    [+] Found live subdomain: {target}")
+            except:
+                continue
+
+        if self.subdomains_found:
+             self.issues.append({
+                "title": f"Hidden Attack Surface Detected ({len(self.subdomains_found)} subdomains)",
+                "severity": "MEDIUM",
+                "impact": f"Attackers often target hidden subdomains like {', '.join(self.subdomains_found[:2])} because they are less secured than the main site.",
+                "fix": "Ensure all discovered subdomains have the same security policies as your main domain and are monitored for vulnerabilities.",
+                "compliance": ["SOC2 CC7.1", "GDPR Article 32"],
+                "code_snippet": f"# Example Nginx restriction for staging\nlocation / {{\n  allow 1.2.3.4; # Your IP\n  deny all;\n}}"
+            })
 
     def check_security_headers(self):
         print("[*] Checking HTTP Headers...")
         try:
             resp = requests.get(self.target_url, timeout=5, verify=certifi.where(), headers=self.headers)
+            
+            # Soft Block Detection for Cloudflare/WAFs
+            block_phrases = ["Just a moment...", "Attention Required! | Cloudflare", "Verify you are human"]
+            if any(phrase in resp.text for phrase in block_phrases):
+                print(f"[!] Soft Block detected. WAF is intercepting the request.")
+                self.issues.append({
+                    "title": "Scan Intercepted by Firewall (WAF)",
+                    "severity": "INFO",
+                    "impact": "The site's firewall (e.g., Cloudflare) presented a captcha. Some security headers could not be verified.",
+                    "fix": "Whitelist this scanner's IP to get a full audit."
+                })
+                return # Stop checking headers to avoid False Positives
+
             headers = resp.headers
 
             
@@ -195,7 +251,9 @@ class SecurityScanner:
                     "title": "Missing Clickjacking Protection (X-Frame-Options)",
                     "severity": "MEDIUM",
                     "impact": "Attackers can embed your website inside an invisible frame (iframe) to trick users into clicking buttons they didn't intend to.",
-                    "fix": "Configure your web server to send the 'X-Frame-Options: SAMEORIGIN' header."
+                    "fix": "Configure your web server to send the 'X-Frame-Options: SAMEORIGIN' header.",
+                    "compliance": ["SOC2 CC7.1", "ISO 27001"],
+                    "code_snippet": "add_header X-Frame-Options \"SAMEORIGIN\"; # Nginx\nHeader set X-Frame-Options \"SAMEORIGIN\" # Apache"
                 })
             
             # 2. XSS Protection
@@ -204,26 +262,50 @@ class SecurityScanner:
                     "title": "Missing Content Security Policy (CSP)",
                     "severity": "MEDIUM",
                     "impact": "Without CSP, your site is vulnerable to Cross-Site Scripting (XSS) and data injection attacks.",
-                    "fix": "Implement a 'Content-Security-Policy' header to restrict where scripts and resources can load from."
+                    "fix": "Implement a 'Content-Security-Policy' header to restrict where scripts and resources can load from.",
+                    "compliance": ["GDPR Article 32", "PCI-DSS"],
+                    "code_snippet": "add_header Content-Security-Policy \"default-src 'self';\"; # Strict Baseline"
                 })
 
-            # 3. Server Leak
+            # 3. HSTS (NEW: Billion Dollar Feature)
+            if "Strict-Transport-Security" not in headers:
+                self.issues.append({
+                    "title": "Missing HSTS (Strict-Transport-Security)",
+                    "severity": "MEDIUM",
+                    "impact": "Without HSTS, attackers can perform SSL stripping attacks to downgrade users to unencrypted HTTP.",
+                    "fix": "Enable HSTS with a long max-age and include subdomains.",
+                    "compliance": ["PCI-DSS Requirement 4.1", "SOC2"],
+                    "code_snippet": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;"
+                })
+
+            # 4. Referrer-Policy (NEW)
+            if "Referrer-Policy" not in headers:
+                self.issues.append({
+                    "title": "Missing Referrer-Policy",
+                    "severity": "LOW",
+                    "impact": "Sensitive data in your URL path might be leaked to external sites when users click on links.",
+                    "fix": "Add a 'Referrer-Policy: strict-origin-when-cross-origin' header.",
+                    "compliance": ["GDPR Privacy by Design"],
+                    "code_snippet": "add_header Referrer-Policy \"strict-origin-when-cross-origin\";"
+                })
+
+            # 5. Server Leak
             if "Server" in headers or "X-Powered-By" in headers:
                 leaked = headers.get('Server', '') + " " + headers.get('X-Powered-By', '')
                 leaked = leaked.strip()
-                # Only flag as a security risk if it contains version numbers (digits)
-                # Generic names like 'cloudflare', 'nginx', 'GitHub.com' are ignored
                 import re
                 if re.search(r'\d', leaked):
                     self.issues.append({
                         "title": f"Server Version Disclosure: {leaked}",
                         "severity": "LOW",
                         "impact": "Revealing exact software versions helps hackers select specific exploits for your server.",
-                        "fix": "Configure your server to hide the version numbers in headers (e.g., 'ServerTokens Prod' in Apache)."
+                        "fix": "Configure your server to hide the version numbers in headers (e.g., 'ServerTokens Prod' in Apache).",
+                        "compliance": ["SOC2 CC7.2"],
+                        "code_snippet": "ServerTokens Prod # Apache\nserver_tokens off; # Nginx"
                     })
 
 
-            # 4. Cookie Security
+            # 6. Cookie Security
             if "Set-Cookie" in headers:
                 cookies = headers['Set-Cookie']
                 if "Secure" not in cookies or "HttpOnly" not in cookies:
@@ -231,7 +313,9 @@ class SecurityScanner:
                         "title": "Insecure Cookies Detected",
                         "severity": "MEDIUM",
                         "impact": "Cookies without 'HttpOnly' can be stolen via XSS. Cookies without 'Secure' can be intercepted over Wifi.",
-                        "fix": "Set the 'Secure' and 'HttpOnly' flags on all session cookies."
+                        "fix": "Set the 'Secure' and 'HttpOnly' flags on all session cookies.",
+                        "compliance": ["GDPR Article 32", "HIPAA"],
+                        "code_snippet": "Set-Cookie: session=xyz; Secure; HttpOnly; SameSite=Strict"
                     })
 
         except Exception:
@@ -255,7 +339,9 @@ class SecurityScanner:
                 "title": "SSL/HTTPS Configuration Error",
                 "severity": "HIGH",
                 "impact": "Users cannot securely connect to your site. Data is sent in plain text and can be stolen.",
-                "fix": "Install a valid SSL Certificate immediately (e.g., Let's Encrypt)."
+                "fix": "Install a valid SSL Certificate immediately (e.g., Let's Encrypt).",
+                "compliance": ["PCI-DSS Requirement 4.1", "GDPR Article 32"],
+                "code_snippet": "sudo certbot --nginx -d yourdomain.com"
             })
 
     def generate_report(self, is_premium=False):
@@ -307,7 +393,14 @@ class SecurityScanner:
             self.issues.sort(key=lambda x: priority.get(x["severity"], 3))
             
             for issue in self.issues:
-                pdf.add_issue_block(issue['title'], issue['impact'], issue['fix'], issue['severity'])
+                pdf.add_issue_block(
+                    issue['title'], 
+                    issue['impact'], 
+                    issue['fix'], 
+                    issue['severity'],
+                    compliance=issue.get('compliance'),
+                    code_snippet=issue.get('code_snippet')
+                )
 
         filename = f"Audit_Report_{self.hostname}.pdf"
         pdf.output(filename)
@@ -353,7 +446,9 @@ class SecurityScanner:
                             "title": f"CRITICAL EXPOSURE: {name} Found",
                             "severity": "HIGH",
                             "impact": f"This file ({path}) is publicly accessible. Attackers can download it to steal passwords, API keys, or your entire codebase.",
-                            "fix": f"Immediately configure your web server (Nginx/Apache) to deny access to {path}."
+                            "fix": f"Immediately configure your web server (Nginx/Apache) to deny access to {path}.",
+                            "compliance": ["SOC2 CC7.1", "GDPR Data Breach"],
+                            "code_snippet": f"# Nginx block file access\nlocation = {path} {{ deny all; }}"
                         })
             except:
                 pass
@@ -382,14 +477,18 @@ class SecurityScanner:
                         "title": "Missing SPF Record (Email Security)",
                         "severity": "MEDIUM",
                         "impact": "You have not authorized any servers to send email for you. Hackers can easily spoof your domain to send phishing emails.",
-                        "fix": "Add a TXT record for 'v=spf1' listing your authorized email servers."
+                        "fix": "Add a TXT record for 'v=spf1' listing your authorized email servers.",
+                        "compliance": ["ISO 27001", "DMARC Policy"],
+                        "code_snippet": "v=spf1 include:_spf.google.com ~all"
                     })
             except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
                 self.issues.append({
                     "title": "Missing SPF Record (Email Security)",
                     "severity": "MEDIUM",
                     "impact": "No SPF record found. Email spoofing is possible.",
-                    "fix": "Create an SPF TXT record."
+                    "fix": "Create an SPF TXT record.",
+                    "compliance": ["ISO 27001"],
+                    "code_snippet": "v=spf1 a mx -all"
                 })
             except Exception as e:
                 print(f"SPF Check failed: {e}")
@@ -403,7 +502,9 @@ class SecurityScanner:
                     "title": "Missing DMARC Record",
                     "severity": "LOW",
                     "impact": "DMARC tells email providers what to do if an email fails SPF checks.",
-                    "fix": "Add a TXT record for '_dmarc'."
+                    "fix": "Add a TXT record for '_dmarc'.",
+                    "compliance": ["BIMI Readiness", "Cyber Insurance Requirement"],
+                    "code_snippet": "v=DMARC1; p=quarantine; rua=mailto:admin@domain.com"
                 })
             except Exception as e:
                 print(f"DMARC Check failed: {e}")
@@ -490,6 +591,10 @@ class SecurityScanner:
             except: pass
 
     def run(self, is_premium=False):
+        # 1. Start with the expansion (Expansion Discovery)
+        self.discover_subdomains()
+
+        # 2. Run traditional checks
         self.check_ports()
         self.check_ssl()
         self.check_security_headers()
@@ -500,11 +605,18 @@ class SecurityScanner:
         self.check_html_comments()
         self.check_admin_paths()
 
-        # --- THE NEW REAL STUFF ---
-        self.check_critical_exposures() # <--- The Source Code Heist
-        self.check_email_security()     # <--- The Email Imposter
+        # 3. Critical Data Checks
+        self.check_critical_exposures() 
+        self.check_email_security()     
 
-        return self.generate_report(is_premium=is_premium)
+        pdf_filename = self.generate_report(is_premium=is_premium)
+        
+        return {
+            "pdf_filename": pdf_filename,
+            "issues": self.issues,
+            "hostname": self.hostname,
+            "grade": self.get_risk_score()
+        }
 
 
 
