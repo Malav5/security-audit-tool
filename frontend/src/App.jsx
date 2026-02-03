@@ -17,7 +17,9 @@ function App() {
 
   // Auth State
   const [session, setSession] = useState(null);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [showAuth, setShowAuth] = useState(false);
+
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
@@ -41,16 +43,19 @@ function App() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
+      setIsInitialLoading(false);
     });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+      setIsInitialLoading(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
+
 
   useEffect(() => {
     let interval;
@@ -95,7 +100,11 @@ function App() {
         const { error } = await supabase.auth.signUp({
           email: authEmail,
           password: authPassword,
+          options: {
+            emailRedirectTo: window.location.origin,
+          }
         });
+
         if (error) throw error;
         alert('Check your email for the confirmation link!');
       } else {
@@ -178,33 +187,36 @@ function App() {
         </div>
 
         <div className="flex items-center gap-4">
-          {session ? (
-            <div className="flex items-center gap-3">
+          {!isInitialLoading && (
+            session ? (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setView(view === 'dashboard' ? 'home' : 'dashboard')}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700 hover:bg-slate-700 transition"
+                >
+                  {view === 'dashboard' ? <Globe className="w-4 h-4" /> : <LayoutDashboard className="w-4 h-4" />}
+                  <span className="hidden md:inline">{view === 'dashboard' ? 'Home' : 'Dashboard'}</span>
+                </button>
+                <button
+                  onClick={handleSignOut}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-900/20 border border-red-900/50 hover:bg-red-900/40 text-red-400 transition"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span className="hidden md:inline">Sign Out</span>
+                </button>
+              </div>
+            ) : (
               <button
-                onClick={() => setView(view === 'dashboard' ? 'home' : 'dashboard')}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700 hover:bg-slate-700 transition"
+                onClick={() => setShowAuth(true)}
+                className="flex items-center gap-2 px-6 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-600 text-white font-semibold transition shadow-lg shadow-cyan-500/20"
               >
-                {view === 'dashboard' ? <Globe className="w-4 h-4" /> : <LayoutDashboard className="w-4 h-4" />}
-                <span className="hidden md:inline">{view === 'dashboard' ? 'Home' : 'Dashboard'}</span>
+                <User className="w-4 h-4" />
+                <span>Sign In</span>
               </button>
-              <button
-                onClick={handleSignOut}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-900/20 border border-red-900/50 hover:bg-red-900/40 text-red-400 transition"
-              >
-                <LogOut className="w-4 h-4" />
-                <span className="hidden md:inline">Sign Out</span>
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setShowAuth(true)}
-              className="flex items-center gap-2 px-6 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-600 text-white font-semibold transition shadow-lg shadow-cyan-500/20"
-            >
-              <User className="w-4 h-4" />
-              <span>Sign In</span>
-            </button>
+            )
           )}
         </div>
+
       </header>
 
       <main className="z-10 w-full max-w-5xl pt-20">
@@ -356,8 +368,8 @@ function App() {
                     <div key={scan.id} className="bg-slate-900/50 border border-slate-800 rounded-xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-6 hover:border-slate-700 transition group">
                       <div className="flex items-center gap-5">
                         <div className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-2xl ${scan.risk_score === 'A+' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' :
-                            scan.risk_score === 'B' ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20' :
-                              'bg-red-500/10 text-red-500 border border-red-500/20'
+                          scan.risk_score === 'B' ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20' :
+                            'bg-red-500/10 text-red-500 border border-red-500/20'
                           }`}>
                           {scan.risk_score}
                         </div>
