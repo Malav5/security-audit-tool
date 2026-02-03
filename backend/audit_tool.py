@@ -149,6 +149,10 @@ class SecurityScanner:
         self.parsed_url = urlparse(self.target_url)
         self.hostname = self.parsed_url.netloc
         self.issues = []
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+
 
     def check_ports(self):
         print("[*] Scanning common ports...")
@@ -176,8 +180,9 @@ class SecurityScanner:
     def check_security_headers(self):
         print("[*] Checking HTTP Headers...")
         try:
-            resp = requests.get(self.target_url, timeout=5, verify=certifi.where())
+            resp = requests.get(self.target_url, timeout=5, verify=certifi.where(), headers=self.headers)
             headers = resp.headers
+
             
             # 1. Clickjacking
             if "X-Frame-Options" not in headers:
@@ -231,8 +236,9 @@ class SecurityScanner:
         print("[*] Checking for sensitive files...")
         # Check robots.txt
         try:
-            resp = requests.get(self.target_url + "/robots.txt", timeout=3, verify=certifi.where())
+            resp = requests.get(self.target_url + "/robots.txt", timeout=3, verify=certifi.where(), headers=self.headers)
             if resp.status_code == 200:
+
                 if "admin" in resp.text or "backup" in resp.text or "config" in resp.text:
                      self.issues.append({
                         "title": "Sensitive Paths revealed in robots.txt",
@@ -331,14 +337,14 @@ class SecurityScanner:
             "/.env": "Environment File (Contains DB passwords & API Keys)",
             "/.git/HEAD": "Git Repository (Contains entire source code history)",
             "/.ds_store": "Mac System File (Reveals directory structure)",
-            "/wp-config.php.bak": "WordPress Config Backup",
-            "/sitemap.xml": "Sitemap (Not a bug, but reveals site structure)"
+            "/wp-config.php.bak": "WordPress Config Backup"
         }
         
         for path, name in dangerous_files.items():
             try:
                 url = self.target_url.rstrip('/') + path
-                resp = requests.get(url, timeout=3, verify=False) # verify=False to catch even if SSL is broken
+                resp = requests.get(url, timeout=3, verify=False, headers=self.headers) # verify=False to catch even if SSL is broken
+
                 
                 # If we get a 200 OK and the content looks real
                 if resp.status_code == 200:
@@ -401,17 +407,100 @@ class SecurityScanner:
         except Exception as e:
             print(f"DNS Check failed: {e}")
 
+    def check_http_methods(self):
+        print("[*] Checking HTTP Methods...")
+        try:
+            resp = requests.options(self.target_url, timeout=3, headers=self.headers)
+            methods = resp.headers.get("Allow", "")
+            if "TRACE" in methods or "PUT" in methods or "DELETE" in methods:
+                self.issues.append({
+                    "title": f"Dangerous HTTP Methods Enabled: {methods}",
+                    "severity": "MEDIUM",
+                    "impact": "Unnecessary methods like TRACE or DELETE can be used for session theft or unauthorized file manipulation.",
+                    "fix": "Disable TRACE, PUT, and DELETE methods on your web server configuration."
+                })
+        except: pass
+
+    def check_directory_listing(self):
+        print("[*] Checking for Directory Listing...")
+        try:
+            # Check a likely empty folder or asset folder
+            paths = ["/images/", "/uploads/", "/assets/"]
+            for path in paths:
+                resp = requests.get(self.target_url + path, timeout=3, headers=self.headers)
+                if "Index of /" in resp.text:
+                    self.issues.append({
+                        "title": "Directory Listing Enabled",
+                        "severity": "MEDIUM",
+                        "impact": "Hackers can see all files in these folders, including backups or sensitive assets.",
+                        "fix": "Disable directory browsing (Options -Indexes in Apache or 'autoindex off' in Nginx)."
+                    })
+                    break
+        except: pass
+
+    def check_mixed_content(self):
+        print("[*] Checking for Mixed Content (HTTP on HTTPS)...")
+        try:
+            resp = requests.get(self.target_url, timeout=5, headers=self.headers)
+            if "http://" in resp.text and self.target_url.startswith("https"):
+                self.issues.append({
+                    "title": "Mixed Content Detected",
+                    "severity": "LOW",
+                    "impact": "Loading HTTP resources on an HTTPS site can allow attackers to intercept scripts or styles.",
+                    "fix": "Ensure all links, images, and scripts use https://."
+                })
+        except: pass
+
+    def check_html_comments(self):
+        print("[*] Scanning for Sensitive HTML Comments...")
+        try:
+            resp = requests.get(self.target_url, timeout=5, headers=self.headers)
+            import re
+            comments = re.findall(r"<!--(.*?)-->", resp.text)
+            for comment in comments:
+                if any(word in comment.lower() for word in ["todo", "fixme", "password", "api", "internal"]):
+                    self.issues.append({
+                        "title": "Sensitive Information in HTML Comments",
+                        "severity": "LOW",
+                        "impact": "Comments can reveal development notes, internal IDs, or login logic to attackers.",
+                        "fix": "Remove development-related or sensitive comments before deploying to production."
+                    })
+                    break
+        except: pass
+
+    def check_admin_paths(self):
+        print("[*] Brute-forcing common admin paths...")
+        admin_paths = ["/admin/", "/login/", "/wp-admin/", "/backend/"]
+        for path in admin_paths:
+            try:
+                resp = requests.get(self.target_url + path, timeout=2, headers=self.headers)
+                if resp.status_code == 200:
+                    self.issues.append({
+                        "title": f"Public Admin Path Found: {path}",
+                        "severity": "LOW",
+                        "impact": "Exposing login panels makes it easier for attackers to attempt brute-force attacks.",
+                        "fix": "Restrict admin paths to specific IP addresses or change them to a custom obfuscated path."
+                    })
+                    break
+            except: pass
+
     def run(self, is_premium=False):
         self.check_ports()
         self.check_ssl()
         self.check_security_headers()
         self.check_sensitive_files()
+        self.check_http_methods()
+        self.check_directory_listing()
+        self.check_mixed_content()
+        self.check_html_comments()
+        self.check_admin_paths()
 
         # --- THE NEW REAL STUFF ---
         self.check_critical_exposures() # <--- The Source Code Heist
         self.check_email_security()     # <--- The Email Imposter
 
         return self.generate_report(is_premium=is_premium)
+
 
 
 
