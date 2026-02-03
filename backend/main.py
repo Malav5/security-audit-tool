@@ -192,28 +192,26 @@ async def delete_scan(scan_id: str, authorization: Optional[str] = Header(None))
     try:
         print(f"DEBUG: Attempting to delete scan {scan_id} for user {user.id}")
         
-        # We try with the user's auth token first to satisfy RLS
-        # We check both string and integer ID formats
-        auth_client = supabase.postgrest.auth(token)
+        # 1. Try deleting with strict user_id filtering using the main client (bypass RLS potential issues)
+        # This is more stable as it doesn't rely on the schema cache of the auth client
+        result = supabase.table("scans").delete().eq("id", scan_id).eq("user_id", str(user.id)).execute()
         
-        # Primary attempt (String ID)
-        result = auth_client.table("scans").delete().eq("id", scan_id).eq("user_id", str(user.id)).execute()
-        
-        # Secondary attempt (Integer ID)
+        # 2. If no data was deleted, try with integer casting
         if not result.data and scan_id.isdigit():
-             result = auth_client.table("scans").delete().eq("id", int(scan_id)).eq("user_id", str(user.id)).execute()
-        
-        # Final fallback - use direct client if auth_client failed to return data
-        if not result.data:
-            print("DEBUG: Auth client delete returned no data, trying direct client...")
-            result = supabase.table("scans").delete().eq("id", scan_id).eq("user_id", str(user.id)).execute()
-            if not result.data and scan_id.isdigit():
-                result = supabase.table("scans").delete().eq("id", int(scan_id)).eq("user_id", str(user.id)).execute()
+            print("DEBUG: UUID match failed, trying as integer ID...")
+            result = supabase.table("scans").delete().eq("id", int(scan_id)).eq("user_id", str(user.id)).execute()
 
-        print(f"DEBUG: Delete final result: {result.data}")
-        return {"status": "success", "message": "Scan deleted successfully"}
+        # 3. Final verification
+        if result.data:
+            print(f"DEBUG: Successfully deleted scan {scan_id}")
+            return {"status": "success", "message": "Scan deleted successfully"}
+        else:
+            print(f"DEBUG: No scan found to delete with ID {scan_id} for user {user.id}")
+            return {"status": "error", "message": "No matching scan found in database"}
+
     except Exception as e:
         print(f"CRITICAL DELETE ERROR: {e}")
+        # Log to Supabase directly if the above fails
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/toggle-automation")
