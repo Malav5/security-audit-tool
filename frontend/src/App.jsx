@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import {
   Shield, Lock, Download, AlertCircle, CheckCircle,
   Activity, Globe, Server, FileText, LayoutDashboard,
-  LogOut, User, Mail, Loader2, ArrowLeft, History, ExternalLink, Trash2, Clock
+  LogOut, User, Mail, Loader2, ArrowLeft, History, ExternalLink, Trash2, Clock, Crown, X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { generateAudit, downloadPDF, deleteScan, toggleAutomation } from './api';
+import { generateAudit, downloadPDF, deleteScan, toggleAutomation, getSubscription, upgradeSubscription } from './api';
 import { supabase } from './supabaseClient';
+import PricingPage from './PricingPage';
 
 function App() {
   const [url, setUrl] = useState('');
@@ -33,6 +34,10 @@ function App() {
   const [view, setView] = useState('home'); // 'home' or 'dashboard'
   const [userScans, setUserScans] = useState([]);
   const [scansLoading, setScansLoading] = useState(false);
+
+  // Subscription State
+  const [subscription, setSubscription] = useState(null);
+  const [showPricing, setShowPricing] = useState(false);
 
   const loadingMessages = [
     "Initializing CyberSecure Enterprise Scanner...",
@@ -79,6 +84,22 @@ function App() {
       fetchUserScans();
     }
   }, [view, session]);
+
+  // Fetch subscription when user logs in
+  useEffect(() => {
+    if (session) {
+      fetchSubscription();
+    }
+  }, [session]);
+
+  const fetchSubscription = async () => {
+    try {
+      const subData = await getSubscription(session.access_token);
+      setSubscription(subData);
+    } catch (err) {
+      console.error('Error fetching subscription:', err);
+    }
+  };
 
   const fetchUserScans = async () => {
     setScansLoading(true);
@@ -241,6 +262,29 @@ function App() {
     }
   };
 
+  const handleUpgrade = async (tier) => {
+    if (!session) {
+      setShowAuth(true);
+      return;
+    }
+
+    if (tier === 'enterprise') {
+      // Open contact sales email
+      window.open('mailto:sales@cybersecure.com?subject=Enterprise Plan Inquiry', '_blank');
+      setShowPricing(false);
+      return;
+    }
+
+    try {
+      await upgradeSubscription(tier, session.access_token);
+      await fetchSubscription(); // Refresh subscription data
+      setShowPricing(false);
+      alert(`Successfully upgraded to ${tier} plan!`);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden bg-[#0A0F1C] text-white">
       {/* Background Elements */}
@@ -261,6 +305,27 @@ function App() {
           {!isInitialLoading && (
             session ? (
               <div className="flex items-center gap-3">
+                {/* Subscription Badge */}
+                {subscription && subscription.tier !== 'free' && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500/10 to-purple-500/10 border border-cyan-500/30">
+                    <Crown className="w-4 h-4 text-cyan-400" />
+                    <span className="text-sm font-semibold text-cyan-400">
+                      {subscription.tier_name}
+                    </span>
+                  </div>
+                )}
+
+                {/* Upgrade Button (show for free users) */}
+                {subscription && subscription.tier === 'free' && (
+                  <button
+                    onClick={() => setShowPricing(true)}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-cyan-500 to-purple-500 text-white font-semibold hover:shadow-lg hover:shadow-cyan-500/20 transition"
+                  >
+                    <Crown className="w-4 h-4" />
+                    <span className="hidden md:inline">Upgrade</span>
+                  </button>
+                )}
+
                 <button
                   onClick={() => setView(view === 'dashboard' ? 'home' : 'dashboard')}
                   className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700 hover:bg-slate-700 transition"
@@ -771,6 +836,34 @@ function App() {
                 </button>
               </div>
             </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Pricing Modal */}
+      <AnimatePresence>
+        {showPricing && (
+          <div className="fixed inset-0 z-50 overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowPricing(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <div className="relative min-h-screen">
+              <button
+                onClick={() => setShowPricing(false)}
+                className="absolute top-6 right-6 z-50 p-2 rounded-lg bg-slate-800 text-white hover:bg-slate-700 transition"
+              >
+                <X className="w-6 h-6" />
+              </button>
+              <PricingPage
+                session={session}
+                onUpgrade={handleUpgrade}
+                onClose={() => setShowPricing(false)}
+              />
+            </div>
           </div>
         )}
       </AnimatePresence>
