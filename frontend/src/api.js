@@ -27,13 +27,24 @@ export const generateAudit = async (url, token = null) => {
     }
 };
 
-export const downloadPDF = async (filename) => {
+export const downloadPDF = async (filename, token) => {
     try {
-        const response = await api.get(`/download-pdf/${filename}`, {
+        const config = {
             responseType: 'blob'
-        });
+        };
+
+        if (token) {
+            config.headers = {
+                'Authorization': `Bearer ${token}`
+            };
+        }
+
+        const response = await api.get(`/download-pdf/${filename}`, config);
         return response.data;
     } catch (error) {
+        if (error.response?.status === 401) {
+            throw new Error("Please sign in to download PDF reports.");
+        }
         throw new Error("Failed to download report. It may have expired.");
     }
 };

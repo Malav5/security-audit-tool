@@ -167,8 +167,22 @@ async def generate_audit(
     return results
 
 @app.get("/download-pdf/{filename}")
-async def download_pdf(filename: str, background_tasks: BackgroundTasks):
-    """Returns the generated PDF file."""
+async def download_pdf(
+    filename: str, 
+    background_tasks: BackgroundTasks,
+    authorization: Optional[str] = Header(None)
+):
+    """Returns the generated PDF file. Requires authentication."""
+    # Verify user is authenticated
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Authentication required to download PDF reports")
+    
+    token = authorization.split(" ")[1]
+    user = await verify_user(token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid or expired authentication token")
+    
+    # Check if file exists
     if os.path.exists(filename):
         background_tasks.add_task(cleanup_file, filename)
         return FileResponse(

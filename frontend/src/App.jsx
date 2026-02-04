@@ -186,7 +186,7 @@ function App() {
     }
 
     try {
-      const blob = await downloadPDF(filename);
+      const blob = await downloadPDF(filename, session.access_token);
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = downloadUrl;

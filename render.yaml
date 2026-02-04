@@ -1,17 +1,66 @@
 services:
+  # Backend API Service
   - type: web
-    name: cyber-audit-api
-    env: python
-    buildCommand: pip install -r requirements.txt
+    name: security-audit-backend
+    runtime: python
+    region: oregon
+    plan: starter
+    branch: main
+    rootDir: backend
+    buildCommand: |
+      # Install system dependencies for Selenium/Chrome
+      apt-get update
+      apt-get install -y wget gnupg unzip
+      
+      # Install Chrome
+      wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add -
+      echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list
+      apt-get update
+      apt-get install -y google-chrome-stable
+      
+      # Install Python dependencies
+      pip install --upgrade pip
+      pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: CHROME_BIN
+        value: /usr/bin/google-chrome-stable
+      - key: CHROMEDRIVER_PATH
+        value: /usr/local/bin/chromedriver
+    healthCheckPath: /
+    autoDeploy: true
 
-
-  - type: static
-    name: cyber-audit-frontend
-    env: static
-    buildCommand: cd frontend && npm install && npm run build
-    staticPublishPath: frontend/dist
+  # Frontend Static Site
+  - type: web
+    name: security-audit-frontend
+    runtime: static
+    region: oregon
+    plan: starter
+    branch: main
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: NODE_VERSION
+        value: 18.17.0
     routes:
       - type: rewrite
         source: /*
         destination: /index.html
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+    autoDeploy: true
