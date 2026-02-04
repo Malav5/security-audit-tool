@@ -151,9 +151,9 @@ async def generate_audit(
                     
                     print(f"DEBUG: User tier: {user_tier}, Scans: {scans_this_month}/{scans_limit}")
                 else:
-                    # No subscription found, create free tier
+                    # No subscription found, create free tier using auth token
                     print(f"DEBUG: No subscription found, creating free tier for user {user_id}")
-                    supabase.table("subscriptions").insert({
+                    supabase.postgrest.auth(token).table("subscriptions").insert({
                         "user_id": str(user_id),
                         "tier": "free",
                         "tier_name": "Free",
@@ -206,9 +206,10 @@ async def generate_audit(
             supabase.postgrest.auth(token).table("scans").insert(scan_data).execute()
             print(f"SUCCESS: Scan saved for {scanner.hostname}")
             
-            # Increment scan count
-            supabase.table("subscriptions").update({
-                "scans_this_month": supabase.table("subscriptions").select("scans_this_month").eq("user_id", str(user_id)).execute().data[0]["scans_this_month"] + 1
+            # Increment scan count using user's token for RLS
+            current_count = supabase.postgrest.auth(token).table("subscriptions").select("scans_this_month").eq("user_id", str(user_id)).execute().data[0]["scans_this_month"]
+            supabase.postgrest.auth(token).table("subscriptions").update({
+                "scans_this_month": current_count + 1
             }).eq("user_id", str(user_id)).execute()
             print(f"SUCCESS: Scan count incremented for user {user_id}")
             
@@ -330,44 +331,42 @@ async def get_subscription(authorization: Optional[str] = Header(None)):
         raise HTTPException(status_code=401, detail="Invalid token")
     
     try:
-        # Get user subscription from database
-        result = supabase.table("subscriptions").select("*").eq("user_id", str(user.id)).execute()
+        # Use auth(token) to respect RLS
+        result = supabase.postgrest.auth(token).table("subscriptions").select("*").eq("user_id", str(user.id)).execute()
         
         if result.data and len(result.data) > 0:
             sub_data = result.data[0]
+            # Calculate scans remaining
+            tier = sub_data.get("tier", "free")
+            scans_this_month = sub_data.get("scans_this_month", 0)
+            scans_limit = sub_data.get("scans_limit", 5)
+            scans_remaining = -1 if tier == "enterprise" else max(0, scans_limit - scans_this_month)
+
             return {
                 "tier": sub_data.get("tier", "free"),
                 "tier_name": sub_data.get("tier_name", "Free"),
-                "scans_this_month": sub_data.get("scans_this_month", 0),
-                "scans_limit": sub_data.get("scans_limit", 5),
+                "scans_this_month": scans_this_month,
+                "scans_limit": scans_limit,
+                "scans_remaining": scans_remaining,
                 "features": sub_data.get("features", {}),
                 "current_period_end": sub_data.get("current_period_end")
             }
         else:
-            # Return default free tier
+            # Handle case where trigger might not have run yet
             return {
                 "tier": "free",
                 "tier_name": "Free",
                 "scans_this_month": 0,
                 "scans_limit": 5,
-                "features": {
-                    "pdf_download": False,
-                    "selenium_enabled": False,
-                    "code_snippets": False
-                }
+                "scans_remaining": 5
             }
     except Exception as e:
         print(f"Error fetching subscription: {e}")
-        return {
-            "tier": "free",
-            "tier_name": "Free",
-            "scans_this_month": 0,
-            "scans_limit": 5
-        }
+        return {"tier": "free", "tier_name": "Free", "scans_this_month": 0, "scans_limit": 5}
 
 @app.post("/upgrade-subscription")
 async def upgrade_subscription(data: dict, authorization: Optional[str] = Header(None)):
-    """Upgrade user subscription (placeholder for Stripe integration)"""
+    """Upgrade user subscription using user's token for RLS"""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Unauthorized")
     
@@ -378,27 +377,28 @@ async def upgrade_subscription(data: dict, authorization: Optional[str] = Header
     
     tier = data.get("tier", "free")
     
-    # TODO: Integrate with Stripe for payment processing
-    # For now, just update the database
+    # Map tier to limit
+    limits = {"free": 5, "basic": 50, "professional": 200, "enterprise": -1}
+    limit = limits.get(tier, 5)
     
     try:
-        # Check if subscription exists
-        result = supabase.table("subscriptions").select("*").eq("user_id", str(user.id)).execute()
+        # Check if subscription exists using user's token
+        result = supabase.postgrest.auth(token).table("subscriptions").select("*").eq("user_id", str(user.id)).execute()
         
         subscription_data = {
             "user_id": str(user.id),
             "tier": tier,
             "tier_name": tier.capitalize(),
-            "scans_this_month": 0,
+            "scans_limit": limit,
             "updated_at": datetime.utcnow().isoformat()
         }
         
         if result.data and len(result.data) > 0:
-            # Update existing
-            supabase.table("subscriptions").update(subscription_data).eq("user_id", str(user.id)).execute()
+            # Update existing using user's token
+            supabase.postgrest.auth(token).table("subscriptions").update(subscription_data).eq("user_id", str(user.id)).execute()
         else:
-            # Create new
-            supabase.table("subscriptions").insert(subscription_data).execute()
+            # Create new using user's token
+            supabase.postgrest.auth(token).table("subscriptions").insert(subscription_data).execute()
         
         return {
             "status": "success",
@@ -407,7 +407,7 @@ async def upgrade_subscription(data: dict, authorization: Optional[str] = Header
         }
     except Exception as e:
         print(f"Error upgrading subscription: {e}")
-        raise HTTPException(status_code=500, detail="Failed to upgrade subscription")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/pricing-plans")
 def get_pricing_plans():
