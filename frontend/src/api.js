@@ -48,6 +48,7 @@ export const downloadPDF = async (filename, token) => {
         throw new Error("Failed to download report. It may have expired.");
     }
 };
+
 export const deleteScan = async (scanId, token) => {
     try {
         const response = await api.delete(`/delete-scan/${scanId}`, {
@@ -60,6 +61,7 @@ export const deleteScan = async (scanId, token) => {
         throw new Error(error.response?.data?.detail || "Failed to delete scan.");
     }
 };
+
 export const toggleAutomation = async (hostname, enable, token) => {
     try {
         const response = await api.post('/toggle-automation', { hostname, enable }, {
@@ -68,5 +70,37 @@ export const toggleAutomation = async (hostname, enable, token) => {
         return response.data;
     } catch (error) {
         throw new Error(error.response?.data?.detail || "Failed to toggle automation.");
+    }
+};
+
+// NEW: Subscription API calls
+export const getSubscription = async (token) => {
+    try {
+        const response = await api.get('/subscription', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        return response.data;
+    } catch (error) {
+        throw new Error(error.response?.data?.detail || "Failed to fetch subscription.");
+    }
+};
+
+export const upgradeSubscription = async (tier, token) => {
+    try {
+        const response = await api.post('/upgrade-subscription', { tier }, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        return response.data;
+    } catch (error) {
+        throw new Error(error.response?.data?.detail || "Failed to upgrade subscription.");
+    }
+};
+
+export const getPricingPlans = async () => {
+    try {
+        const response = await api.get('/pricing-plans');
+        return response.data;
+    } catch (error) {
+        throw new Error("Failed to fetch pricing plans.");
     }
 };
