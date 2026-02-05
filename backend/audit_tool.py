@@ -1,3 +1,4 @@
+import re
 import requests
 import socket
 import ssl
@@ -9,7 +10,6 @@ import google.generativeai as genai
 import os
 import dns.resolver
 import urllib3
-import re
 
 # Suppress InsecureRequestWarning for cleaner logs
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -223,7 +223,7 @@ class SecurityScanner:
 
         if self.subdomains_found:
              self.issues.append({
-                "title": f"Hidden Attack Surface Detected ({len(self.subdomains_found)} subdomains)",
+                "title": "Hidden Attack Surface/Subdomains",
                 "severity": "INFO",
                 "impact": f"Attackers often target hidden subdomains like {', '.join(self.subdomains_found[:2])} because they are less secured than the main site.",
                 "fix": "Ensure all discovered subdomains have the same security policies as your main domain and are monitored for vulnerabilities.",
@@ -299,7 +299,6 @@ class SecurityScanner:
             if "Server" in headers or "X-Powered-By" in headers:
                 leaked = headers.get('Server', '') + " " + headers.get('X-Powered-By', '')
                 leaked = leaked.strip()
-                import re
                 if re.search(r'\d', leaked):
                     self.issues.append({
                         "title": f"Server Version Disclosure: {leaked}",
@@ -575,7 +574,6 @@ class SecurityScanner:
         print("[*] Scanning for Sensitive HTML Comments...")
         try:
             resp = requests.get(self.target_url, timeout=5, headers=self.headers)
-            import re
             comments = re.findall(r"<!--(.*?)-->", resp.text)
             for comment in comments:
                 if any(word in comment.lower() for word in ["todo", "fixme", "password", "api", "internal"]):

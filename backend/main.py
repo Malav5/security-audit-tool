@@ -55,9 +55,7 @@ app = FastAPI(
     version="1.0"
 )
 
-# --- SCHEDULER INITIALIZATION ---
-scheduler = BackgroundScheduler()
-scheduler.start()
+# --- SCHEDULER INITIALIZATION (Already started above) ---
 
 def run_scheduled_scan(user_id: str, url: str):
     """Execution logic for automated scans."""
@@ -74,7 +72,7 @@ def run_scheduled_scan(user_id: str, url: str):
             "issue_count": len(results["issues"]),
             "pdf_url": results["pdf_filename"],
             "findings": results["issues"],
-            "created_at": datetime.datetime.now().isoformat()
+            "created_at": datetime.now().isoformat()
         }
         # In a real app we'd need a service key to bypass RLS for background jobs
         # For now, we interact with the DB directly
@@ -375,11 +373,41 @@ async def upgrade_subscription(data: dict, authorization: Optional[str] = Header
     if not user:
         raise HTTPException(status_code=401, detail="Invalid token")
     
-    tier = data.get("tier", "free")
+    tier = data.get("tier", "free").lower()
     
-    # Map tier to limit
-    limits = {"free": 5, "basic": 50, "professional": 200, "enterprise": -1}
-    limit = limits.get(tier, 5)
+    # Map tier to limit and features
+    plan_meta = {
+        "free": {
+            "limit": 5,
+            "features": {
+                "pdf_download": False, "selenium_enabled": False, "code_snippets": False,
+                "automated_scans": False, "api_access": False
+            }
+        },
+        "basic": {
+            "limit": 50,
+            "features": {
+                "pdf_download": True, "selenium_enabled": True, "code_snippets": False,
+                "automated_scans": False, "api_access": False
+            }
+        },
+        "professional": {
+            "limit": 200,
+            "features": {
+                "pdf_download": True, "selenium_enabled": True, "code_snippets": True,
+                "automated_scans": True, "api_access": True
+            }
+        },
+        "enterprise": {
+            "limit": -1,
+            "features": {
+                "pdf_download": True, "selenium_enabled": True, "code_snippets": True,
+                "automated_scans": True, "api_access": True, "priority_support": True, "custom_branding": True
+            }
+        }
+    }
+    
+    meta = plan_meta.get(tier, plan_meta["free"])
     
     try:
         # Check if subscription exists using user's token
@@ -389,8 +417,9 @@ async def upgrade_subscription(data: dict, authorization: Optional[str] = Header
             "user_id": str(user.id),
             "tier": tier,
             "tier_name": tier.capitalize(),
-            "scans_limit": limit,
-            "updated_at": datetime.utcnow().isoformat()
+            "scans_limit": meta["limit"],
+            "features": meta["features"],
+            "updated_at": datetime.now().isoformat()
         }
         
         if result.data and len(result.data) > 0:
@@ -402,7 +431,7 @@ async def upgrade_subscription(data: dict, authorization: Optional[str] = Header
         
         return {
             "status": "success",
-            "message": f"Upgraded to {tier} plan",
+            "message": f"Successfully upgraded to {tier} plan",
             "tier": tier
         }
     except Exception as e:
