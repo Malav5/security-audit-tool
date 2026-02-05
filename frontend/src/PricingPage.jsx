@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Check, X, Crown, Zap, Building2, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-const PricingPage = ({ session, onUpgrade, onClose }) => {
+const PricingPage = ({ session, subscription, onUpgrade, onCancel, onClose }) => {
     const [billingCycle, setBillingCycle] = useState('monthly');
 
     const plans = [
@@ -226,16 +226,47 @@ const PricingPage = ({ session, onUpgrade, onClose }) => {
                                 </div>
 
                                 {/* CTA Button */}
-                                <button
-                                    onClick={() => onUpgrade(plan.tier)}
-                                    disabled={!session && plan.tier !== 'free'}
-                                    className={`w-full py-3 rounded-xl font-bold transition-all mb-6 ${plan.popular
-                                            ? `${getColorClasses(plan.color, 'bg')} text-black ${getColorClasses(plan.color, 'hover')}`
-                                            : `bg-slate-800 text-white hover:bg-slate-700 ${!session && plan.tier !== 'free' ? 'opacity-50 cursor-not-allowed' : ''}`
-                                        }`}
-                                >
-                                    {!session && plan.tier !== 'free' ? 'Sign In Required' : plan.cta}
-                                </button>
+                                {(() => {
+                                    const isCurrentPlan = subscription?.tier === plan.tier;
+                                    const isFree = plan.tier === 'free';
+                                    const isDisabled = (!session && !isFree) || isCurrentPlan;
+
+                                    return (
+                                        <>
+                                            <button
+                                                onClick={() => onUpgrade(plan.tier)}
+                                                disabled={isDisabled}
+                                                className={`w-full py-3 rounded-xl font-bold transition-all mb-3 ${isCurrentPlan
+                                                    ? 'bg-slate-800 text-slate-500 cursor-default border border-slate-700'
+                                                    : plan.popular
+                                                        ? `${getColorClasses(plan.color, 'bg')} text-black ${getColorClasses(plan.color, 'hover')}`
+                                                        : `bg-slate-800 text-white hover:bg-slate-700`
+                                                    } ${(!session && !isFree) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                            >
+                                                {!session && !isFree
+                                                    ? 'Sign In Required'
+                                                    : isCurrentPlan
+                                                        ? subscription?.cancel_at_period_end ? 'Canceling Soon' : 'Current Plan'
+                                                        : plan.cta}
+                                            </button>
+
+                                            {isCurrentPlan && !isFree && !subscription?.cancel_at_period_end && (
+                                                <button
+                                                    onClick={onCancel}
+                                                    className="w-full py-2 text-xs font-bold text-red-500/60 hover:text-red-500 transition-colors uppercase tracking-widest mb-4"
+                                                >
+                                                    Cancel Subscription
+                                                </button>
+                                            )}
+
+                                            {isCurrentPlan && !isFree && subscription?.cancel_at_period_end && (
+                                                <p className="text-[10px] text-center text-slate-500 italic mb-4">
+                                                    Access through {new Date(subscription.current_period_end).toLocaleDateString()}
+                                                </p>
+                                            )}
+                                        </>
+                                    );
+                                })()}
 
                                 {/* Features List */}
                                 <ul className="space-y-3">

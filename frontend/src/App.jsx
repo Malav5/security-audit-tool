@@ -5,7 +5,7 @@ import {
   LogOut, User, Mail, Loader2, ArrowLeft, History, ExternalLink, Trash2, Clock, Crown, X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { generateAudit, downloadPDF, deleteScan, toggleAutomation, getSubscription, upgradeSubscription } from './api';
+import { generateAudit, downloadPDF, deleteScan, toggleAutomation, getSubscription, upgradeSubscription, cancelSubscription } from './api';
 import { supabase } from './supabaseClient';
 import PricingPage from './PricingPage';
 
@@ -280,6 +280,19 @@ function App() {
       await fetchSubscription(); // Refresh subscription data
       setShowPricing(false);
       alert(`Successfully upgraded to ${tier} plan!`);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const handleCancelSubscription = async () => {
+    if (!session) return;
+    if (!window.confirm("Are you sure you want to cancel your subscription? You will retain access until the end of your billing cycle.")) return;
+
+    try {
+      await cancelSubscription(session.access_token);
+      await fetchSubscription(); // Refresh data to show cancellation status
+      alert("Your subscription has been scheduled for cancellation.");
     } catch (err) {
       alert(err.message);
     }
@@ -860,7 +873,9 @@ function App() {
               </button>
               <PricingPage
                 session={session}
+                subscription={subscription}
                 onUpgrade={handleUpgrade}
+                onCancel={handleCancelSubscription}
                 onClose={() => setShowPricing(false)}
               />
             </div>

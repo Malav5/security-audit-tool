@@ -104,3 +104,13 @@ export const getPricingPlans = async () => {
         throw new Error("Failed to fetch pricing plans.");
     }
 };
+export const cancelSubscription = async (token) => {
+    try {
+        const response = await api.post('/cancel-subscription', {}, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        return response.data;
+    } catch (error) {
+        throw new Error(error.response?.data?.detail || "Failed to cancel subscription.");
+    }
+};

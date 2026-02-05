@@ -1,6 +1,7 @@
 import os
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
 from typing import Optional
 from dotenv import load_dotenv
 
@@ -81,6 +82,59 @@ def run_scheduled_scan(user_id: str, url: str):
     except Exception as e:
         print(f"[AUTO-PILOT] ERROR: Failed automated scan for {url}: {e}")
 
+def process_subscription_billing():
+    """Scheduled task to handle monthly renewals and cancellations"""
+    print("[BILLING] Running automated subscription check...")
+    try:
+        # Find all active subscriptions that have expired
+        now = datetime.now()
+        # Use admin client to check all subscriptions
+        result = supabase.table("subscriptions").select("*").lt("current_period_end", now.isoformat()).execute()
+        
+        for sub in result.data:
+            user_id = sub["user_id"]
+            tier = sub["tier"]
+            cancel_at_period_end = sub.get("cancel_at_period_end", False)
+            
+            if cancel_at_period_end:
+                # Downgrade to free tier
+                print(f"[BILLING] Subscription for {user_id} expired and canceled. Downgrading to free.")
+                supabase.table("subscriptions").update({
+                    "tier": "free",
+                    "tier_name": "Free",
+                    "scans_limit": 5,
+                    "scans_this_month": 0,
+                    "features": {
+                        "pdf_download": False, "selenium_enabled": False, "code_snippets": False,
+                        "automated_scans": False, "api_access": False
+                    },
+                    "current_period_start": now.isoformat(),
+                    "current_period_end": (now + relativedelta(months=1)).isoformat(),
+                    "cancel_at_period_end": False,
+                    "updated_at": now.isoformat()
+                }).eq("user_id", user_id).execute()
+            else:
+                # Renew for another month (reset scan count)
+                # In a real app, this would trigger a payment charge
+                print(f"[BILLING] Renewing subscription for {user_id} ({tier})")
+                supabase.table("subscriptions").update({
+                    "scans_this_month": 0,
+                    "current_period_start": now.isoformat(),
+                    "current_period_end": (now + relativedelta(months=1)).isoformat(),
+                    "updated_at": now.isoformat()
+                }).eq("user_id", user_id).execute()
+                
+    except Exception as e:
+        print(f"[BILLING] Critical error in billing job: {e}")
+
+# Register the billing check to run every 12 hours
+scheduler.add_job(
+    process_subscription_billing,
+    trigger=IntervalTrigger(hours=12),
+    id="billing_check",
+    replace_existing=True
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -139,6 +193,26 @@ async def generate_audit(
                     user_tier = subscription.get("tier", "free")
                     scans_this_month = subscription.get("scans_this_month", 0)
                     scans_limit = subscription.get("scans_limit", 5)
+                    period_end_str = subscription.get("current_period_end")
+                    
+                    # --- Proactive Period Reset Check ---
+                    now = datetime.now()
+                    if period_end_str:
+                        period_end = datetime.fromisoformat(period_end_str.replace("Z", "+00:00")).replace(tzinfo=None)
+                        if now > period_end:
+                            print(f"DEBUG: Period expired for {user_id}. Resetting scans.")
+                            # Reset period for exactly one calendar month
+                            new_start = now
+                            new_end = now + relativedelta(months=1)
+                            
+                            supabase.table("subscriptions").update({
+                                "scans_this_month": 0,
+                                "current_period_start": new_start.isoformat(),
+                                "current_period_end": new_end.isoformat(),
+                                "updated_at": now.isoformat()
+                            }).eq("user_id", str(user_id)).execute()
+                            
+                            scans_this_month = 0 # Update local variable for subsequent check
                     
                     # Check if user has scans remaining (unless enterprise)
                     if user_tier != "enterprise" and scans_this_month >= scans_limit:
@@ -151,12 +225,15 @@ async def generate_audit(
                 else:
                     # No subscription found, create free tier using auth token
                     print(f"DEBUG: No subscription found, creating free tier for user {user_id}")
+                    now = datetime.now()
                     supabase.postgrest.auth(token).table("subscriptions").insert({
                         "user_id": str(user_id),
                         "tier": "free",
                         "tier_name": "Free",
                         "scans_this_month": 0,
-                        "scans_limit": 5
+                        "scans_limit": 5,
+                        "current_period_start": now.isoformat(),
+                        "current_period_end": (now + relativedelta(months=1)).isoformat()
                     }).execute()
                     
             except HTTPException:
@@ -410,24 +487,29 @@ async def upgrade_subscription(data: dict, authorization: Optional[str] = Header
     meta = plan_meta.get(tier, plan_meta["free"])
     
     try:
-        # Check if subscription exists using user's token
-        result = supabase.postgrest.auth(token).table("subscriptions").select("*").eq("user_id", str(user.id)).execute()
+        # Check if subscription exists using admin client for check
+        result = supabase.table("subscriptions").select("*").eq("user_id", str(user.id)).execute()
         
+        now = datetime.now()
         subscription_data = {
             "user_id": str(user.id),
             "tier": tier,
             "tier_name": tier.capitalize(),
             "scans_limit": meta["limit"],
             "features": meta["features"],
-            "updated_at": datetime.now().isoformat()
+            "scans_this_month": 0, # Reset count on upgrade/change
+            "current_period_start": now.isoformat(),
+            "current_period_end": (now + relativedelta(months=1)).isoformat(),
+            "updated_at": now.isoformat()
         }
         
+        # Use admin client with user_id check to ensure stability
         if result.data and len(result.data) > 0:
-            # Update existing using user's token
-            supabase.postgrest.auth(token).table("subscriptions").update(subscription_data).eq("user_id", str(user.id)).execute()
+            # Update existing
+            supabase.table("subscriptions").update(subscription_data).eq("user_id", str(user.id)).execute()
         else:
-            # Create new using user's token
-            supabase.postgrest.auth(token).table("subscriptions").insert(subscription_data).execute()
+            # Create new
+            supabase.table("subscriptions").insert(subscription_data).execute()
         
         return {
             "status": "success",
@@ -437,6 +519,28 @@ async def upgrade_subscription(data: dict, authorization: Optional[str] = Header
     except Exception as e:
         print(f"Error upgrading subscription: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/cancel-subscription")
+async def cancel_subscription(authorization: Optional[str] = Header(None)):
+    """Sets the subscription to cancel at the end of the current period."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    token = authorization.split(" ")[1]
+    user = await verify_user(token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    
+    try:
+        supabase.table("subscriptions").update({
+            "cancel_at_period_end": True,
+            "updated_at": datetime.now().isoformat()
+        }).eq("user_id", str(user.id)).execute()
+        
+        return {"status": "success", "message": "Subscription will be canceled at the end of the period."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/pricing-plans")
 def get_pricing_plans():
