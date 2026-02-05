@@ -318,24 +318,19 @@ function App() {
           {!isInitialLoading && (
             session ? (
               <div className="flex items-center gap-3">
-                {/* Subscription Badge */}
-                {subscription && subscription.tier !== 'free' && (
-                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500/10 to-purple-500/10 border border-cyan-500/30">
-                    <Crown className="w-4 h-4 text-cyan-400" />
-                    <span className="text-sm font-semibold text-cyan-400">
-                      {subscription.tier_name}
-                    </span>
-                  </div>
-                )}
-
-                {/* Upgrade Button (show for free users) */}
-                {subscription && subscription.tier === 'free' && (
+                {/* Subscription & Pricing Button */}
+                {subscription && (
                   <button
                     onClick={() => setShowPricing(true)}
-                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-cyan-500 to-purple-500 text-white font-semibold hover:shadow-lg hover:shadow-cyan-500/20 transition"
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all active:scale-95 ${subscription.tier === 'free'
+                        ? "bg-gradient-to-r from-cyan-500 to-purple-500 text-white font-semibold hover:shadow-lg hover:shadow-cyan-500/20"
+                        : "bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 font-semibold hover:bg-cyan-500/20"
+                      }`}
                   >
                     <Crown className="w-4 h-4" />
-                    <span className="hidden md:inline">Upgrade</span>
+                    <span className="hidden md:inline">
+                      {subscription.tier === 'free' ? 'Upgrade' : 'Manage Plan'}
+                    </span>
                   </button>
                 )}
 
