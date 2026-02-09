@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, BackgroundTasks, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 import requests
+import razorpay
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from supabase import create_client, Client
@@ -24,14 +25,12 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# --- PAYPAL CONFIG ---
-PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID")
-PAYPAL_CLIENT_SECRET = os.getenv("PAYPAL_CLIENT_SECRET")
-PAYPAL_WEBHOOK_ID = os.getenv("PAYPAL_WEBHOOK_ID")
-PAYPAL_MODE = os.getenv("PAYPAL_MODE", "sandbox") # 'sandbox' or 'live'
+# --- RAZORPAY CONFIG ---
+RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID")
+RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET")
+razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 
-PAYPAL_API_BASE = "https://api-m.sandbox.paypal.com" if PAYPAL_MODE == "sandbox" else "https://api-m.paypal.com"
-
+# --- FRONTEND FOR COMPLIANCE ---
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
 # --- AUTOMATION SCHEDULER ---
@@ -159,9 +158,11 @@ class ScanRequest(BaseModel):
     url: str
 
 def cleanup_file(path: str):
-    """Deletes the PDF after sending it to save space."""
-    if os.path.exists(path):
-        os.remove(path)
+    """Deletes the PDF after sending it to save space. 
+    (Optional: could be handled by a cron job instead to allow faster subsequent downloads)
+    """
+    # Removed immediate delete to prevent "expired" issue
+    pass
 
 async def verify_user(token: str):
     """Verifies the Supabase user token."""
@@ -279,34 +280,51 @@ async def generate_audit(
         risk_score = results["grade"]
         issue_count = len(results["issues"])
 
+        # Read PDF content for database storage
+        pdf_base64 = ""
+        try:
+            import base64
+            if os.path.exists(pdf_filename):
+                with open(pdf_filename, "rb") as f:
+                    pdf_base64 = base64.b64encode(f.read()).decode('utf-8')
+                    print(f"DEBUG: Encoded PDF to base64 ({len(pdf_base64)} chars)")
+        except Exception as e:
+            print(f"WARNING: Could not encode PDF for storage: {e}")
+
         scan_data = {
             "user_id": str(user_id),
             "hostname": scanner.hostname,
             "risk_score": risk_score,
             "issue_count": issue_count,
             "pdf_url": pdf_filename,
-            "findings": results["issues"] # Save the full research for the portal
+            "findings": results["issues"], # Save the full research for the portal
+            "pdf_content": pdf_base64 # STORE THE REPORT IN DATABASE
         }
         try:
             # Use the authenticated client to bypass RLS properly
             supabase.postgrest.auth(token).table("scans").insert(scan_data).execute()
-            print(f"SUCCESS: Scan saved for {scanner.hostname}")
+            print(f"SUCCESS: Scan saved for {scanner.hostname} with PDF content")
             
             # Increment scan count using user's token for RLS
-            current_count = supabase.postgrest.auth(token).table("subscriptions").select("scans_this_month").eq("user_id", str(user_id)).execute().data[0]["scans_this_month"]
-            supabase.postgrest.auth(token).table("subscriptions").update({
-                "scans_this_month": current_count + 1
-            }).eq("user_id", str(user_id)).execute()
-            print(f"SUCCESS: Scan count incremented for user {user_id}")
+            current_count_res = supabase.postgrest.auth(token).table("subscriptions").select("scans_this_month").eq("user_id", str(user_id)).execute()
+            if current_count_res.data:
+                current_count = current_count_res.data[0]["scans_this_month"]
+                supabase.postgrest.auth(token).table("subscriptions").update({
+                    "scans_this_month": current_count + 1
+                }).eq("user_id", str(user_id)).execute()
+                print(f"SUCCESS: Scan count incremented for user {user_id}")
             
         except Exception as e:
             print(f"CRITICAL: Error saving scan to Supabase: {e}")
-            # Fallback for local testing if token auth fails
-            try:
-                supabase.table("scans").insert(scan_data).execute()
-                print("FALLBACK SUCCESS: Saved without token header")
-            except Exception as e2:
-                print(f"ULTIMATE FAILURE: {e2}")
+            # If pdf_content column missing, retry without it
+            if "pdf_content" in str(e):
+                print("FALLBACK: Retrying without pdf_content field...")
+                del scan_data["pdf_content"]
+                try:
+                    supabase.table("scans").insert(scan_data).execute()
+                    print("FALLBACK SUCCESS: Saved without pdf_content column")
+                except Exception as e2:
+                    print(f"ULTIMATE FAILURE: {e2}")
 
     return results
 
@@ -316,7 +334,9 @@ async def download_pdf(
     background_tasks: BackgroundTasks,
     authorization: Optional[str] = Header(None)
 ):
-    """Returns the generated PDF file. Requires authentication."""
+    """Returns the generated PDF file. Requires authentication. 
+    If file is missing from local storage, it regenerates it from database findings.
+    """
     # Verify user is authenticated
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Authentication required to download PDF reports")
@@ -326,15 +346,66 @@ async def download_pdf(
     if not user:
         raise HTTPException(status_code=401, detail="Invalid or expired authentication token")
     
-    # Check if file exists
+    # 1. Try local file
     if os.path.exists(filename):
-        background_tasks.add_task(cleanup_file, filename)
         return FileResponse(
             path=filename, 
             filename=filename, 
             media_type='application/pdf'
         )
-    raise HTTPException(status_code=404, detail="File not found or already deleted.")
+    
+    # 2. If missing, attempt to retrieve from database or regenerate
+    print(f"DEBUG: File {filename} not found locally. Searching database...")
+    try:
+        # Search for the scan record by filename (pdf_url)
+        res = supabase.table("scans").select("*").eq("pdf_url", filename).execute()
+        
+        if res.data and len(res.data) > 0:
+            scan = res.data[0]
+            
+            # 2a. Check if we have the content stored as base64 in the database
+            pdf_content = scan.get("pdf_content")
+            if pdf_content:
+                print(f"DEBUG: Found PDF content in database. Decoding...")
+                import base64
+                pdf_bytes = base64.b64decode(pdf_content)
+                # Save temporarily to serve it
+                with open(filename, "wb") as f:
+                    f.write(pdf_bytes)
+                
+                return FileResponse(
+                    path=filename,
+                    filename=filename,
+                    media_type='application/pdf'
+                )
+            
+            # 2b. Fallback: Regenerate from findings
+            print(f"DEBUG: PDF content not in DB. Regenerating from findings...")
+            # Get user's current tier to ensure we generate the correct version
+            sub_res = supabase.table("subscriptions").select("tier").eq("user_id", str(user.id)).execute()
+            user_tier = "free"
+            if sub_res.data:
+                user_tier = sub_res.data[0].get("tier", "free")
+            
+            from tiered_pdf import generate_tiered_pdf
+            new_filename = generate_tiered_pdf(
+                hostname=scan["hostname"],
+                grade=scan["risk_score"],
+                findings=scan["findings"],
+                tier=user_tier
+            )
+            
+            if os.path.exists(new_filename):
+                return FileResponse(
+                    path=new_filename,
+                    filename=filename,
+                    media_type='application/pdf'
+                )
+        
+    except Exception as e:
+        print(f"ERROR: Failed to regenerate PDF: {e}")
+        
+    raise HTTPException(status_code=404, detail="Report not found or expired. Please run a new scan.")
 
 @app.delete("/delete-scan/{scan_id}")
 async def delete_scan(scan_id: str, authorization: Optional[str] = Header(None)):
@@ -531,21 +602,38 @@ async def upgrade_subscription(data: dict, authorization: Optional[str] = Header
         print(f"Error upgrading subscription: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-def get_paypal_access_token():
-    """Get PayPal OAuth2 access token."""
-    url = f"{PAYPAL_API_BASE}/v1/oauth2/token"
-    headers = {"Accept": "application/json", "Accept-Language": "en_US"}
-    data = {"grant_type": "client_credentials"}
-    response = requests.post(url, headers=headers, data=data, auth=(PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET))
-    if response.status_code == 200:
-        return response.json()["access_token"]
-    else:
-        print(f"PAYPAL AUTH ERROR: {response.text}")
-        return None
 
-@app.post("/create-paypal-order")
-async def create_paypal_order(data: dict, authorization: Optional[str] = Header(None)):
-    """Creates a PayPal order for subscription upgrade."""
+# --- RAZORPAY ENDPOINTS ---
+
+class RazorpayOrderRequest(BaseModel):
+    amount: int  # in paise
+    currency: str = "INR"
+
+@app.post("/api/create-order")
+async def create_order(data: RazorpayOrderRequest, authorization: Optional[str] = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    try:
+        order_params = {
+            "amount": data.amount,
+            "currency": data.currency,
+            "payment_capture": 1
+        }
+        razorpay_order = razorpay_client.order.create(data=order_params)
+        return razorpay_order
+    except Exception as e:
+        print(f"RAZORPAY ORDER ERROR: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class RazorpayVerifyRequest(BaseModel):
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
+    tier: str
+
+@app.post("/api/verify-payment")
+async def verify_payment(data: RazorpayVerifyRequest, authorization: Optional[str] = Header(None)):
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Unauthorized")
     
@@ -554,81 +642,24 @@ async def create_paypal_order(data: dict, authorization: Optional[str] = Header(
     if not user:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    tier = data.get("tier", "basic").lower()
-    
-    # Prices as defined in PricingPage
-    price_map = {
-        "basic": 29,
-        "professional": 99,
-        "enterprise": 299
-    }
-    
-    amount = price_map.get(tier)
-    if not amount:
-        raise HTTPException(status_code=400, detail="Invalid tier")
-
-    access_token = get_paypal_access_token()
-    if not access_token:
-        raise HTTPException(status_code=500, detail="PayPal Authentication Failed")
-
-    url = f"{PAYPAL_API_BASE}/v2/checkout/orders"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {access_token}"
-    }
-    
-    order_data = {
-        "intent": "CAPTURE",
-        "purchase_units": [{
-            "amount": {
-                "currency_code": "USD",
-                "value": str(amount)
-            },
-            "description": f"CyberSecure {tier.capitalize()} Plan",
-            "reference_id": f"{user.id}_{tier}"
-        }],
-        "application_context": {
-            "brand_name": "CyberSecure India",
-            "return_url": f"{FRONTEND_URL}/payment-success",
-            "cancel_url": f"{FRONTEND_URL}/pricing"
-        }
+    params_dict = {
+        'razorpay_order_id': data.razorpay_order_id,
+        'razorpay_payment_id': data.razorpay_payment_id,
+        'razorpay_signature': data.razorpay_signature
     }
 
-    response = requests.post(url, headers=headers, json=order_data)
-    if response.status_code in [200, 201]:
-        return response.json()
-    else:
-        print(f"PAYPAL ORDER ERROR: {response.text}")
-        raise HTTPException(status_code=response.status_code, detail=response.text)
-
-@app.post("/webhook")
-async def paypal_webhook(request: Request):
-    """PayPal webhook to handle asynchronous events."""
-    # For simplicity in local dev, we skip strict signature verification 
-    # unless PAYPAL_WEBHOOK_ID is provided and we implement verification.
-    # In production, ALWAYS verify the signature.
-    
-    data = await request.json()
-    event_type = data.get("event_type")
-    
-    if event_type == "CHECKOUT.ORDER.COMPLETED" or event_type == "PAYMENT.CAPTURE.COMPLETED":
-        resource = data.get("resource", {})
+    try:
+        # Verify the signature
+        razorpay_client.utility.verify_payment_signature(params_dict)
         
-        # Try to extract user_id and tier from custom description or metadata
-        # In PayPal V2 Orders, reference_id is used for this
-        reference_id = resource.get("reference_id")
-        if not reference_id:
-            # If order level, it might be deeper
-            purchase_units = resource.get("purchase_units", [])
-            if purchase_units:
-                reference_id = purchase_units[0].get("reference_id")
-                
-        if reference_id and "_" in reference_id:
-            user_id, tier = reference_id.split("_")
-            print(f"WEBHOOK: PayPal payment completed for user {user_id}, upgrading to {tier}")
-            await perform_upgrade(user_id, tier)
-
-    return {"status": "success"}
+        # If verification succeeds, upgrade the user
+        print(f"SUCCESS: Razorpay signature verified for user {user.id}")
+        await perform_upgrade(str(user.id), data.tier)
+        
+        return {"status": "success", "message": "Payment verified and subscription upgraded."}
+    except Exception as e:
+        print(f"RAZORPAY VERIFY ERROR: {e}")
+        raise HTTPException(status_code=400, detail="Payment verification failed")
 
 async def perform_upgrade(user_id: str, tier: str):
     """Helper function to perform database upgrade."""

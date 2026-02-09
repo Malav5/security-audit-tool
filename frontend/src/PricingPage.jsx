@@ -329,7 +329,7 @@ const PricingPage = ({ session, subscription, onUpgrade, onCancel, onClose }) =>
                             },
                             {
                                 q: 'What payment methods do you accept?',
-                                a: 'We accept all major credit cards and debit cards through PayPal.'
+                                a: 'We accept all major credit cards and debit cards.'
                             },
                             {
                                 q: 'Is there a free trial?',

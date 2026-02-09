@@ -33,6 +33,10 @@ services:
         value: /usr/bin/google-chrome-stable
       - key: CHROMEDRIVER_PATH
         value: /usr/local/bin/chromedriver
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
     healthCheckPath: /
     autoDeploy: true
 
@@ -49,6 +53,8 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 18.17.0
+      - key: VITE_RAZORPAY_KEY_ID
+        sync: false
     routes:
       - type: rewrite
         source: /*

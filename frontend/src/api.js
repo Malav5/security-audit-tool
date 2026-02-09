@@ -115,13 +115,25 @@ export const cancelSubscription = async (token) => {
     }
 };
 
-export const createPayPalOrder = async (tier, token) => {
+export const createRazorpayOrder = async (amount, token) => {
     try {
-        const response = await api.post('/create-paypal-order', { tier }, {
+        const response = await api.post('/api/create-order', { amount }, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         return response.data;
     } catch (error) {
-        throw new Error(error.response?.data?.detail || "Failed to initiate PayPal payment.");
+        throw new Error(error.response?.data?.detail || "Failed to initiate Razorpay payment.");
     }
 };
+
+export const verifyRazorpayPayment = async (paymentData, token) => {
+    try {
+        const response = await api.post('/api/verify-payment', paymentData, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        return response.data;
+    } catch (error) {
+        throw new Error(error.response?.data?.detail || "Payment verification failed.");
+    }
+};
+

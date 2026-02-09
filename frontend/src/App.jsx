@@ -5,7 +5,7 @@ import {
   LogOut, User, Mail, Loader2, ArrowLeft, History, ExternalLink, Trash2, Clock, Crown, X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { generateAudit, downloadPDF, deleteScan, toggleAutomation, getSubscription, upgradeSubscription, cancelSubscription, createPayPalOrder } from './api';
+import { generateAudit, downloadPDF, deleteScan, toggleAutomation, getSubscription, upgradeSubscription, cancelSubscription, createRazorpayOrder, verifyRazorpayPayment } from './api';
 import { supabase } from './supabaseClient';
 import PricingPage from './PricingPage';
 
@@ -66,22 +66,6 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Handle Stripe Payment Success
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('token')) { // PayPal uses 'token' for the order ID in the URL
-      setSuccess(true);
-      // Clean up URL
-      const newUrl = window.location.pathname;
-      window.history.replaceState({}, document.title, newUrl);
-
-      // Refresh subscription
-      if (session) {
-        fetchSubscription();
-        alert("Payment authorized! Your plan will be upgraded once processing is complete.");
-      }
-    }
-  }, [session]);
 
 
   useEffect(() => {
@@ -279,6 +263,16 @@ function App() {
     }
   };
 
+  const loadRazorpayScript = () => {
+    return new Promise((resolve) => {
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
   const handleUpgrade = async (tier) => {
     if (!session) {
       setShowAuth(true);
@@ -293,18 +287,66 @@ function App() {
     }
 
     try {
-      // --- PAYPAL INTEGRATION ---
-      const orderData = await createPayPalOrder(tier, session.access_token);
+      if (tier === 'free') return;
 
-      // Find the approve link
-      const approveLink = orderData.links.find(link => link.rel === 'approve');
-
-      if (approveLink) {
-        // Redirect to PayPal
-        window.location.href = approveLink.href;
-      } else {
-        throw new Error("Failed to create PayPal order");
+      const res = await loadRazorpayScript();
+      if (!res) {
+        alert('Razorpay SDK failed to load. Are you online?');
+        return;
       }
+
+      // 1. Map tier to price (in Paise for Razorpay)
+      const priceMap = {
+        'basic': 2900,         // ₹29.00 -> 2900 paise
+        'professional': 9900,  // ₹99.00 -> 9900 paise
+        'enterprise': 29900    // ₹299.00 -> 29900 paise
+      };
+
+      const amount = priceMap[tier];
+
+      // 2. Create order on backend
+      const order = await createRazorpayOrder(amount, session.access_token);
+
+      // 3. Open Razorpay Checkout
+      const options = {
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID || '', // We'll need to add this to .env
+        amount: order.amount,
+        currency: order.currency,
+        name: "CyberSecure India",
+        description: `Upgrade to ${tier.charAt(0).toUpperCase() + tier.slice(1)} Plan`,
+        image: "https://kctecmuwsnshbdzrxfxy.supabase.co/storage/v1/object/public/assets/logo.png",
+        order_id: order.id,
+        handler: async function (response) {
+          // 4. Verify payment on backend
+          try {
+            setIsLoading(true);
+            await verifyRazorpayPayment({
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              tier: tier
+            }, session.access_token);
+
+            await fetchSubscription();
+            setShowPricing(false);
+            alert("Welcome to Premium! Your account has been upgraded.");
+          } catch (err) {
+            alert("Payment verification failed: " + err.message);
+          } finally {
+            setIsLoading(false);
+          }
+        },
+        prefill: {
+          email: session.user.email,
+        },
+        theme: {
+          color: "#06b6d4",
+        },
+      };
+
+      const paymentObject = new window.Razorpay(options);
+      paymentObject.open();
+
     } catch (err) {
       alert(err.message);
     }
@@ -758,13 +800,7 @@ function App() {
                         >
                           <Download className="w-4 h-4" /> Download PDF
                         </button>
-                        <button
-                          onClick={(e) => handleDeleteScan(e, scan.id)}
-                          className="p-2 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all group-hover:opacity-100"
-                          title="Delete Scan"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
+
                       </div>
                     </div>
                   ))}
