@@ -558,7 +558,7 @@ async def create_paypal_order(data: dict, authorization: Optional[str] = Header(
     
     # Prices as defined in PricingPage
     price_map = {
-        "basic": 29,
+        "basic": 0.5,
         "professional": 99,
         "enterprise": 299
     }
