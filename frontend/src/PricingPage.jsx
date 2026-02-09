@@ -3,7 +3,6 @@ import { Check, X, Crown, Zap, Building2, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const PricingPage = ({ session, subscription, onUpgrade, onCancel, onClose }) => {
-    const [billingCycle, setBillingCycle] = useState('monthly');
 
     const plans = [
         {
@@ -154,35 +153,13 @@ const PricingPage = ({ session, subscription, onUpgrade, onCancel, onClose }) =>
                         Unlock powerful security scanning features with our flexible pricing options
                     </motion.p>
 
-                    {/* Billing Toggle */}
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.3 }}
-                        className="flex items-center justify-center gap-4 mt-8"
-                    >
-                        <span className={`text-sm font-semibold ${billingCycle === 'monthly' ? 'text-white' : 'text-slate-500'}`}>
-                            Monthly
-                        </span>
-                        <button
-                            onClick={() => setBillingCycle(billingCycle === 'monthly' ? 'yearly' : 'monthly')}
-                            className="relative w-14 h-7 bg-slate-700 rounded-full transition-colors hover:bg-slate-600"
-                        >
-                            <div className={`absolute top-1 left-1 w-5 h-5 bg-cyan-500 rounded-full transition-transform ${billingCycle === 'yearly' ? 'translate-x-7' : ''}`} />
-                        </button>
-                        <span className={`text-sm font-semibold ${billingCycle === 'yearly' ? 'text-white' : 'text-slate-500'}`}>
-                            Yearly
-                            <span className="ml-2 text-xs text-cyan-400">(Save 20%)</span>
-                        </span>
-                    </motion.div>
                 </div>
 
                 {/* Pricing Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
                     {plans.map((plan, index) => {
                         const Icon = plan.icon;
-                        const yearlyPrice = Math.round(plan.price * 12 * 0.8);
-                        const displayPrice = billingCycle === 'yearly' ? yearlyPrice : plan.price;
+                        const displayPrice = plan.price;
 
                         return (
                             <motion.div
@@ -214,15 +191,10 @@ const PricingPage = ({ session, subscription, onUpgrade, onCancel, onClose }) =>
                                         <span className="text-5xl font-black">${displayPrice}</span>
                                         {plan.price > 0 && (
                                             <span className="text-slate-500 text-sm">
-                                                /{billingCycle === 'yearly' ? 'year' : 'month'}
+                                                /month
                                             </span>
                                         )}
                                     </div>
-                                    {billingCycle === 'yearly' && plan.price > 0 && (
-                                        <p className="text-xs text-cyan-400 mt-2">
-                                            ${Math.round(yearlyPrice / 12)}/month billed annually
-                                        </p>
-                                    )}
                                 </div>
 
                                 {/* CTA Button */}
@@ -357,7 +329,7 @@ const PricingPage = ({ session, subscription, onUpgrade, onCancel, onClose }) =>
                             },
                             {
                                 q: 'What payment methods do you accept?',
-                                a: 'We accept all major credit cards, debit cards, and PayPal through Stripe.'
+                                a: 'We accept all major credit cards and debit cards through PayPal.'
                             },
                             {
                                 q: 'Is there a free trial?',

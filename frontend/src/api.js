@@ -114,3 +114,14 @@ export const cancelSubscription = async (token) => {
         throw new Error(error.response?.data?.detail || "Failed to cancel subscription.");
     }
 };
+
+export const createPayPalOrder = async (tier, token) => {
+    try {
+        const response = await api.post('/create-paypal-order', { tier }, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        return response.data;
+    } catch (error) {
+        throw new Error(error.response?.data?.detail || "Failed to initiate PayPal payment.");
+    }
+};

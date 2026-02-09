@@ -5,7 +5,7 @@ import {
   LogOut, User, Mail, Loader2, ArrowLeft, History, ExternalLink, Trash2, Clock, Crown, X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { generateAudit, downloadPDF, deleteScan, toggleAutomation, getSubscription, upgradeSubscription, cancelSubscription } from './api';
+import { generateAudit, downloadPDF, deleteScan, toggleAutomation, getSubscription, upgradeSubscription, cancelSubscription, createPayPalOrder } from './api';
 import { supabase } from './supabaseClient';
 import PricingPage from './PricingPage';
 
@@ -65,6 +65,23 @@ function App() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Handle Stripe Payment Success
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('token')) { // PayPal uses 'token' for the order ID in the URL
+      setSuccess(true);
+      // Clean up URL
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+
+      // Refresh subscription
+      if (session) {
+        fetchSubscription();
+        alert("Payment authorized! Your plan will be upgraded once processing is complete.");
+      }
+    }
+  }, [session]);
 
 
   useEffect(() => {
@@ -276,10 +293,18 @@ function App() {
     }
 
     try {
-      await upgradeSubscription(tier, session.access_token);
-      await fetchSubscription(); // Refresh subscription data
-      setShowPricing(false);
-      alert(`Successfully upgraded to ${tier} plan!`);
+      // --- PAYPAL INTEGRATION ---
+      const orderData = await createPayPalOrder(tier, session.access_token);
+
+      // Find the approve link
+      const approveLink = orderData.links.find(link => link.rel === 'approve');
+
+      if (approveLink) {
+        // Redirect to PayPal
+        window.location.href = approveLink.href;
+      } else {
+        throw new Error("Failed to create PayPal order");
+      }
     } catch (err) {
       alert(err.message);
     }
@@ -323,8 +348,8 @@ function App() {
                   <button
                     onClick={() => setShowPricing(true)}
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all active:scale-95 ${subscription.tier === 'free'
-                        ? "bg-gradient-to-r from-cyan-500 to-purple-500 text-white font-semibold hover:shadow-lg hover:shadow-cyan-500/20"
-                        : "bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 font-semibold hover:bg-cyan-500/20"
+                      ? "bg-gradient-to-r from-cyan-500 to-purple-500 text-white font-semibold hover:shadow-lg hover:shadow-cyan-500/20"
+                      : "bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 font-semibold hover:bg-cyan-500/20"
                       }`}
                   >
                     <Crown className="w-4 h-4" />
