@@ -17,7 +17,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- BRANDING ---
 AGENCY_NAME = "CyberSecure India"
-AGENCY_SITE = "www.cybersecure-india.com"
+AGENCY_SITE = ""
 REPORT_TITLE = "Comprehensive Security Audit"
 
 # --- COLORS ---
