@@ -263,11 +263,15 @@ async def generate_audit(
     # 3. Generate tier-based PDF
     from tiered_pdf import generate_tiered_pdf
     try:
+        # Generate the AI summary string first
+        ai_summary = scanner.generate_ai_summary()
+        
         pdf_filename = generate_tiered_pdf(
             hostname=scanner.hostname,
             grade=results["grade"],
             findings=results["issues"],
-            tier=user_tier
+            tier=user_tier,
+            ai_summary=ai_summary
         )
         results["pdf_filename"] = pdf_filename
     except Exception as e:

@@ -30,34 +30,29 @@ COLOR_TEXT_MAIN = (50, 50, 50)     # Dark Gray
 COLOR_TEXT_LIGHT = (100, 100, 100) # Light Gray
 
 class AdvancedPDF(FPDF):
+    def clean_text(self, text):
+        """Helper to ensure text is latin-1 compatible."""
+        if not isinstance(text, str): return str(text)
+        return text.encode('latin-1', 'ignore').decode('latin-1')
+
     def header(self):
-        # Header Background
-        self.set_fill_color(*COLOR_HEADER_BG)
-        self.rect(0, 0, 210, 45, 'F')
+        # Header Background (Premium Blue)
+        self.set_fill_color(41, 128, 185)
+        self.rect(0, 0, 210, 40, 'F')
         
         # Agency Name
-        self.set_text_color(*COLOR_HEADER_TXT)
+        self.set_text_color(255, 255, 255)
         self.set_font('Arial', 'B', 22)
         self.set_xy(10, 12)
-        self.cell(0, 10, AGENCY_NAME, 0, 1, 'L')
-        
-        # Report Title
-        self.set_font('Arial', '', 12)
-        self.set_xy(10, 22)
-        self.cell(0, 10, REPORT_TITLE, 0, 1, 'L')
-
-        # Link to Agency
-        self.set_font('Arial', 'U', 10)
-        self.set_xy(10, 32)
-        self.cell(0, 10, AGENCY_SITE, link=f"https://{AGENCY_SITE}")
+        self.cell(0, 10, AGENCY_NAME, 0, 0, 'L')
         
         # Confidential Stamp
-        self.set_font('Arial', 'B', 12)
-        self.set_text_color(255, 200, 200)
-        self.set_xy(150, 18)
-        self.cell(50, 10, "[ CONFIDENTIAL ]", 0, 0, 'C')
+        self.set_font('Arial', 'B', 10)
+        self.set_text_color(200, 230, 255)
+        self.set_xy(150, 13)
+        self.cell(50, 10, "[ CONFIDENTIAL ]", 0, 0, 'R')
         
-        self.ln(30)
+        self.ln(35)
 
     def footer(self):
         self.set_y(-15)
@@ -65,16 +60,8 @@ class AdvancedPDF(FPDF):
         self.set_text_color(128, 128, 128)
         self.cell(0, 10, f'Page {self.page_no()} | Automated Assessment by {AGENCY_NAME}', 0, 0, 'C')
 
-        # CTA for Free Users
-        if not getattr(self, 'is_premium', True):
-            self.set_y(-25)
-            self.set_font('Arial', 'B', 10)
-            self.set_text_color(231, 76, 60) # Red for urgency
-            self.cell(0, 10, f"Unlock Full Report & Fixes at {AGENCY_SITE}", 0, 0, 'C', link=f"https://{AGENCY_SITE}")
-
-
     def draw_section_header(self, title):
-        self.ln(10)
+        self.ln(5)
         self.set_font('Arial', 'B', 14)
         self.set_text_color(44, 62, 80)
         self.cell(0, 10, title.upper(), 0, 1, 'L')
@@ -83,83 +70,74 @@ class AdvancedPDF(FPDF):
         self.ln(5)
 
     def add_issue_block(self, title, impact, fix, severity="HIGH", compliance=None, code_snippet=None):
+        title = self.clean_text(title)
+        impact = self.clean_text(impact)
+        fix = self.clean_text(fix)
+        compliance = [self.clean_text(c) for c in compliance] if compliance else None
+        code_snippet = self.clean_text(code_snippet) if code_snippet else None
+        
         is_premium = getattr(self, 'is_premium', True)
 
         # Select Color based on severity
-        if severity == "HIGH":
-            self.set_fill_color(*COLOR_HIGH_RISK)
-            bg_badge = "CRITICAL"
-        elif severity == "MEDIUM":
-            self.set_fill_color(*COLOR_MEDIUM_RISK)
-            bg_badge = "WARNING"
-        else:
-            self.set_fill_color(*COLOR_SAFE)
-            bg_badge = "INFO"
+        colors = {"HIGH": COLOR_HIGH_RISK, "MEDIUM": COLOR_MEDIUM_RISK, "LOW": COLOR_SAFE}
+        color = colors.get(severity, COLOR_TEXT_LIGHT)
 
-        # Badge
-        current_y = self.get_y()
-        self.rect(10, current_y + 2, 22, 6, 'F')
+        self.ln(5)
+        rect_y = self.get_y()
+        # Card Background
+        self.set_fill_color(252, 253, 255)
+        self.rect(10, rect_y, 190, 50, 'F')
+        
+        # Vertical Sidebar
+        self.set_fill_color(*color)
+        self.rect(10, rect_y, 2, 50, 'F')
+
+        self.set_xy(15, rect_y + 5)
+        self.set_font('Arial', 'B', 12)
+        self.set_text_color(44, 62, 80)
+        self.multi_cell(0, 7, f"ISSUE: {title}")
+
+        # Severity Badge
+        self.set_x(15)
+        self.set_fill_color(*color)
         self.set_text_color(255, 255, 255)
         self.set_font('Arial', 'B', 8)
-        self.set_xy(10, current_y + 2)
-        self.cell(22, 6, bg_badge, 0, 0, 'C')
-
-        # Issue Title
-        self.set_xy(35, current_y)
-        self.set_text_color(*COLOR_TEXT_MAIN)
-        self.set_font('Arial', 'B', 11)
-        self.cell(0, 10, title, 0, 1)
-
-        # Compliance Tags (Premium ONLY)
-        if compliance and is_premium:
-            self.set_x(35)
-            self.set_font('Arial', 'I', 8)
-            self.set_text_color(100, 100, 100)
-            tags = " | ".join([f"[{c}]" for c in compliance])
-            self.cell(0, 5, f"Compliance: {tags}", 0, 1)
-
-        # Impact Section
-        self.set_x(10)
-        self.set_text_color(*COLOR_TEXT_MAIN)
-        self.set_font('Arial', 'B', 9)
-        self.cell(15, 6, "Impact:", 0, 0)
-        self.set_font('Arial', '', 9)
+        self.cell(20, 6, severity, 0, 1, 'C', True)
         
-        if is_premium:
-            self.multi_cell(0, 6, impact)
-        else:
-            self.set_text_color(150, 150, 150)
-            self.multi_cell(0, 6, "[LOCKED] Upgrade to Premium for detailed impact analysis.")
-            self.set_text_color(*COLOR_TEXT_MAIN)
-
-        # Fix Section
-        self.set_x(10)
-        self.set_font('Arial', 'B', 9)
-        self.set_text_color(41, 128, 185) # Blue for fix
-        self.cell(22, 6, "Remediation:", 0, 0)
-        self.set_font('Arial', '', 9)
+        self.ln(2)
         
-        if is_premium:
-            self.set_text_color(50, 50, 50)
-            self.multi_cell(0, 6, fix)
-            
-            # Code Snippet (Hotfix)
-            if code_snippet:
-                self.ln(2)
-                self.set_x(15)
-                self.set_fill_color(245, 245, 245)
-                self.set_font('Courier', '', 8)
-                self.multi_cell(180, 5, code_snippet, fill=True)
-                self.ln(2)
-        else:
-            self.set_text_color(150, 150, 150)
-            self.multi_cell(0, 6, "[LOCKED] Upgrade for step-by-step code fixes.")
-            self.set_text_color(50, 50, 50)
+        # Impact
+        self.set_x(15)
+        self.set_font('Arial', 'B', 10)
+        self.set_text_color(44, 62, 80)
+        self.cell(20, 6, "Impact:", 0, 0)
+        self.set_font('Arial', '', 10)
+        self.set_text_color(80, 80, 80)
+        self.multi_cell(0, 6, impact)
 
-        self.ln(3) # Spacer
+        # Fix
+        self.set_x(15)
+        self.set_font('Arial', 'B', 10)
+        self.set_text_color(44, 62, 80)
+        self.cell(20, 6, "Fix:", 0, 0)
+        self.set_font('Arial', '', 10)
+        self.multi_cell(0, 6, fix if is_premium else "[LOCKED] Upgrade to unlock fix instructions.")
+
+        if is_premium and code_snippet:
+            self.ln(2)
+            self.set_x(15)
+            self.set_fill_color(240, 240, 240)
+            self.set_font('Courier', '', 8)
+            self.multi_cell(180, 5, code_snippet, fill=True)
 
 
 class SecurityScanner:
+    def clean_text(self, text):
+        """Removes non-latin-1 characters to prevent PDF generation errors."""
+        if not text: return ""
+        # Filter out characters that can't be encoded in latin-1 (common in AI responses/emojis)
+        return text.encode('latin-1', 'ignore').decode('latin-1')
+
     def __init__(self, target_url):
         if not target_url.startswith(("http://", "https://")):
             self.target_url = "https://" + target_url
@@ -410,7 +388,7 @@ class SecurityScanner:
         pdf.set_font('Arial', 'I', 10)
         pdf.set_text_color(*COLOR_TEXT_MAIN)
         summary = self.generate_ai_summary()
-        pdf.multi_cell(0, 6, summary)
+        pdf.multi_cell(0, 6, pdf.clean_text(summary))
             
         pdf.ln(10)
 
@@ -499,9 +477,9 @@ class SecurityScanner:
                 resp = requests.get(url, timeout=5, verify=certifi.where(), headers=self.headers, allow_redirects=True)
 
                 # WAF/Block detection to avoid false findings on block pages
-                block_phrases = ["Just a moment...", "Attention Required!", "Verify you are human"]
-                if any(phrase in resp.text for phrase in block_phrases):
-                    print(f"    [!] Skipping {path}: WAF block detected.")
+                block_phrases = ["Just a moment...", "Attention Required!", "Verify you are human", "protected by cloudflare", "access denied"]
+                if any(phrase.lower() in resp.text.lower() for phrase in block_phrases):
+                    print(f"    [-] Access to {path} is protected by WAF/Firewall (Security Active).")
                     continue
 
                 if resp.status_code == 200:
