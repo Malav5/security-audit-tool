@@ -207,19 +207,19 @@ const PricingPage = ({ session, subscription, onUpgrade, onCancel, onClose }) =>
                                         <>
                                             <button
                                                 onClick={() => onUpgrade(plan.tier)}
-                                                disabled={isDisabled}
+                                                disabled={isDisabled || (!isCurrentPlan && plan.tier !== 'free')}
                                                 className={`w-full py-3 rounded-xl font-bold transition-all mb-3 ${isCurrentPlan
                                                     ? 'bg-slate-800 text-slate-500 cursor-default border border-slate-700'
                                                     : plan.popular
                                                         ? `${getColorClasses(plan.color, 'bg')} text-black ${getColorClasses(plan.color, 'hover')}`
                                                         : `bg-slate-800 text-white hover:bg-slate-700`
-                                                    } ${(!session && !isFree) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                    } ${((!session && !isFree) || (!isCurrentPlan && plan.tier !== 'free')) ? 'opacity-50 cursor-not-allowed' : ''}`}
                                             >
                                                 {!session && !isFree
                                                     ? 'Sign In Required'
                                                     : isCurrentPlan
                                                         ? subscription?.cancel_at_period_end ? 'Canceling Soon' : 'Current Plan'
-                                                        : plan.cta}
+                                                        : (!isCurrentPlan && plan.tier !== 'free') ? 'Upgrades Disabled' : plan.cta}
                                             </button>
 
                                             {isCurrentPlan && !isFree && !subscription?.cancel_at_period_end && (
@@ -325,19 +325,19 @@ const PricingPage = ({ session, subscription, onUpgrade, onCancel, onClose }) =>
                         {[
                             {
                                 q: 'Can I change plans anytime?',
-                                a: 'Yes! You can upgrade or downgrade your plan at any time. Changes take effect immediately.'
+                                a: 'Upgrades are currently disabled for this demonstration. Please contact support for more information.'
                             },
                             {
                                 q: 'What payment methods do you accept?',
-                                a: 'We accept all major credit cards and debit cards.'
+                                a: 'We typically accept all major credit cards, but payments are disabled for this demo.'
                             },
                             {
                                 q: 'Is there a free trial?',
-                                a: 'The Free plan is available forever. Upgrade anytime to access premium features.'
+                                a: 'The Free plan is available for use. Upgrades to premium features are currently paused.'
                             },
                             {
                                 q: 'Do you offer refunds?',
-                                a: '30-day money-back guarantee on all paid plans. No questions asked.'
+                                a: 'This is a demonstration project, no real transactions are processed.'
                             }
                         ].map((faq, idx) => (
                             <div key={idx} className="bg-slate-900/40 border border-slate-800 rounded-xl p-6 text-left">

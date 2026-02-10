@@ -385,8 +385,8 @@ function App() {
           {!isInitialLoading && (
             session ? (
               <div className="flex items-center gap-3">
-                {/* Subscription & Pricing Button */}
-                {subscription && (
+                {/* Subscription & Pricing Button - Disabled for LinkedIn Demo */}
+                {/* {subscription && (
                   <button
                     onClick={() => setShowPricing(true)}
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all active:scale-95 ${subscription.tier === 'free'
@@ -399,7 +399,7 @@ function App() {
                       {subscription.tier === 'free' ? 'Upgrade' : 'Manage Plan'}
                     </span>
                   </button>
-                )}
+                )} */}
 
                 <button
                   onClick={() => setView(view === 'dashboard' ? 'home' : 'dashboard')}
